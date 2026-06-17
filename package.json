@@ -1,0 +1,33 @@
+{
+  "name": "msword-aichat",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b --noEmit",
+    "start": "office-addin-debugging start manifest.xml",
+    "stop": "office-addin-debugging stop manifest.xml",
+    "validate": "office-addin-manifest validate manifest.xml"
+  },
+  "dependencies": {
+    "@fluentui/react-components": "^9.72.7",
+    "@fluentui/react-icons": "^2.0.313",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@types/office-js": "^1.0.537",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@vitejs/plugin-basic-ssl": "^2.1.0",
+    "@vitejs/plugin-react": "^5.1.0",
+    "office-addin-debugging": "^6.0.3",
+    "office-addin-manifest": "^2.0.3",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.2"
+  }
+}
