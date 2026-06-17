@@ -108,3 +108,44 @@ body,
   min-height: 44px;
   max-height: 120px;
 }
+
+.context-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #e0e0e0;
+  background: #fff;
+}
+
+.context-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.context-dropdown {
+  flex: 1;
+  min-width: 0;
+}
+
+.context-status {
+  color: #616161;
+}
+
+.quick-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+
+.quick-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.quick-actions-hint {
+  color: #616161;
+}

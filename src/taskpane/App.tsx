@@ -2,15 +2,17 @@ import { FluentProvider, webLightTheme } from "@fluentui/react-components";
 import { useEffect, useState } from "react";
 import { useChat } from "../hooks/useChat";
 import { useSettingsStore } from "../settings/store";
+import type { ContextMode } from "../types/context";
 import { ChatPanel } from "./components/ChatPanel";
 import { Header } from "./components/Header";
 import { SettingsPanel } from "./components/SettingsPanel";
 
 export function App() {
   const [view, setView] = useState<"chat" | "settings">("chat");
+  const [contextMode, setContextMode] = useState<ContextMode>("selection");
   const load = useSettingsStore((s) => s.load);
   const isConfigured = useSettingsStore((s) => s.isConfigured);
-  const chat = useChat();
+  const chat = useChat(contextMode);
 
   useEffect(() => {
     load();
@@ -35,6 +37,8 @@ export function App() {
           <ChatPanel
             messages={chat.messages}
             isStreaming={chat.isStreaming}
+            contextMode={contextMode}
+            onContextModeChange={setContextMode}
             onSend={chat.sendMessage}
           />
         ) : (
