@@ -10,13 +10,13 @@ Build a **Microsoft Word task-pane add-in** that provides:
 2. **Agentic editing** via tool calls against Office.js
 3. **Bring-your-own-model** via OpenAI- or Anthropic-compatible HTTP APIs
 
-Phase 4 delivers onboarding, distribution packaging, and polish. Phase 5 is advanced/backlog.
+Phase 5 delivers conversation persistence, custom instructions, slash commands, `insert_comment`, and a dev CORS proxy. Remaining backlog items are optional future work.
 
 **Minimum supported host:** Word 2016+ or Microsoft 365 Word (not Office 2013).
 
 ---
 
-## Current state (Phase 4 — complete)
+## Current state (Phase 5 — complete)
 
 | Area | Implemented | Location |
 |------|-------------|----------|
@@ -30,7 +30,13 @@ Phase 4 delivers onboarding, distribution packaging, and polish. Phase 5 is adva
 | Anthropic-compatible adapter + tools | Yes | `src/llm/anthropic-compatible.ts` |
 | Chat mode (streaming) | Yes | `src/hooks/useChat.ts` |
 | Agent mode (tool loop) | Yes | `src/agent/orchestrator.ts` |
-| Document tools (9 total) | Yes | `src/agent/tools/registry.ts` |
+| Document tools (10 total) | Yes | `src/agent/tools/registry.ts` |
+| Per-document conversation store | Yes | `src/conversation/store.ts`, `useDocumentKey` |
+| Custom instructions / review mode | Yes | `src/settings/defaults.ts`, `prompt-options.ts` |
+| Slash commands | Yes | `src/agent/slash-commands.ts`, `MessageInput.tsx` |
+| `insert_comment` tool | Yes | `src/word/operations.ts`, registry |
+| Dev CORS proxy | Yes | `proxy/dev-proxy.mjs` |
+| Remote telemetry POST | Yes | `src/telemetry/index.ts` |
 | Word operations | Yes | `src/word/operations.ts` |
 | Range bookmarks (stable apply) | Yes | `src/word/ranges.ts` |
 | Undo snapshots | Yes | `src/word/undo.ts` |
@@ -186,9 +192,11 @@ Delivered: `search_document`, `delete_range`, `apply_style`, `format_range`, `in
 
 Delivered: onboarding wizard, `/models` fetch, error retry/copy, `manifest.prod.xml`, `npm run package`, Vite code-splitting, opt-in telemetry stub, Word on the web QA checklist in README.
 
-### Phase 5 — Advanced / backlog (next)
+### Phase 5 — Advanced (complete)
 
-Slash commands, conversation persistence, enterprise proxy, comments workflow.
+Delivered: per-document conversation persistence, custom instructions, review mode, slash commands (`/fix`, `/table`, `/toc`, `/summarize`, `/formal`, `/comment`), `insert_comment` tool, dev CORS proxy (`npm run proxy`), optional remote telemetry endpoint.
+
+**Backlog (not scheduled):** RAG attachments, voice input, multi-document awareness, full enterprise proxy service.
 
 ---
 
@@ -249,6 +257,7 @@ npm run build        # production build
 npm run typecheck
 npm run validate     # manifest.xml
 npm run package      # build + assemble package/ for deployment
+npm run proxy        # local CORS proxy for dev gateways
 ```
 
 ### Verification checklist (run before marking a phase done)

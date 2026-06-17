@@ -4,7 +4,7 @@ A Microsoft Word task-pane add-in that brings AI chat and agentic document editi
 
 ## Status
 
-**Phase 4 complete.** Onboarding wizard, model list fetch, error retry/copy, production packaging.
+**Phase 5 complete.** Per-document conversations, custom instructions, slash commands, review comments, dev proxy.
 
 | Phase | Scope | Status |
 |-------|-------|--------|
@@ -13,6 +13,7 @@ A Microsoft Word task-pane add-in that brings AI chat and agentic document editi
 | 2 | Agent loop + document edit tools | Done |
 | 3 | Advanced editing (styles, tables, undo) | Done |
 | 4 | Polish, Word on the web, distribution | Done |
+| 5 | Advanced features (persistence, slash cmds, comments) | Done |
 
 ## Features (today)
 
@@ -21,7 +22,11 @@ A Microsoft Word task-pane add-in that brings AI chat and agentic document editi
 - Connection test against your configured endpoint
 - **Chat mode** — streaming responses with optional document context
 - **Agent mode** — multi-step tool loop with document read/write tools
-- **Document tools:** `get_selection`, `get_document_text`, `search_document`, `insert_text`, `replace_text`, `delete_range`, `apply_style`, `format_range`, `insert_table`
+- **Document tools (10):** `get_selection`, `get_document_text`, `search_document`, `insert_text`, `replace_text`, `delete_range`, `apply_style`, `format_range`, `insert_table`, `insert_comment`
+- **Slash commands:** `/fix`, `/table`, `/toc`, `/summarize`, `/formal`, `/comment`
+- **Custom instructions** — persistent persona/rules in Settings
+- **Per-document conversations** — chat history keyed by document URL (toggle in Settings)
+- **Review mode** — agent prefers `insert_comment` over body edits
 - **Stable apply** — mutations capture a bookmarked range so Apply works after selection changes
 - **Edit preview** — before/after diff with **Apply** / **Reject** (default)
 - **Undo** — revert the last applied edit from the preview panel
@@ -106,6 +111,7 @@ The agent can call tools to read and edit the document:
 | `apply_style` | Apply Normal, Heading1–3, Title, or Subtitle |
 | `format_range` | Bold, italic, or font size on selection |
 | `insert_table` | Insert a table (up to 20×10) after selection |
+| `insert_comment` | Add a Word review comment on the selection (immediate) |
 
 **Edit flow (default):** mutation tools stage a before/after preview. Click **Apply** to write to Word, **Reject** to discard, or **Undo** after applying.
 
@@ -157,6 +163,7 @@ On first launch, a **5-step onboarding wizard** walks you through setup. You can
 | `npm run validate:prod` | Validate `manifest.prod.xml` template |
 | `npm run package` | Build and assemble `package/` for deployment |
 | `npm run package -- https://host/path` | Package with production manifest URLs filled in |
+| `npm run proxy` | Start local CORS proxy on port 8787 (see below) |
 
 ## Project structure
 
@@ -213,6 +220,16 @@ Upload the contents of `package/` to your HTTPS origin. Use `manifest.xml` from 
 
 For local development, keep using root `manifest.xml` (localhost URLs).
 
+### CORS dev proxy (enterprise / local gateways)
+
+If your LLM gateway blocks browser origins from the task pane, run the included proxy:
+
+```bash
+TARGET_URL=https://api.openai.com npm run proxy
+```
+
+Then set **Base URL** to `http://localhost:8787/v1` in Settings. The proxy adds CORS headers and forwards requests. Use only for development — production should allow the add-in origin or use an org-managed proxy.
+
 ## Word on the web QA checklist
 
 Manual smoke test in Word on the web before org-wide rollout:
@@ -233,7 +250,7 @@ Manual smoke test in Word on the web before org-wide rollout:
 
 See [AGENTS.md](./AGENTS.md) for the full phased plan and implementation guide for contributors and coding agents.
 
-**Next up (Phase 5):** slash commands, conversation persistence, enterprise proxy, comments workflow.
+**Backlog:** RAG over attachments, voice input, multi-document awareness, AppSource assets.
 
 ## Troubleshooting
 

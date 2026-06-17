@@ -1,6 +1,7 @@
 import { FluentProvider, Spinner, webLightTheme } from "@fluentui/react-components";
 import { Suspense, lazy, useEffect, useState } from "react";
 import { useChat } from "../hooks/useChat";
+import { useDocumentKey } from "../hooks/useDocumentKey";
 import { useSettingsStore } from "../settings/store";
 import type { ContextMode } from "../types/context";
 import { ChatPanel } from "./components/ChatPanel";
@@ -19,7 +20,8 @@ export function App() {
   const load = useSettingsStore((s) => s.load);
   const isConfigured = useSettingsStore((s) => s.isConfigured);
   const onboardingCompleted = useSettingsStore((s) => s.preferences.onboardingCompleted);
-  const chat = useChat(contextMode);
+  const { docKey } = useDocumentKey();
+  const chat = useChat(contextMode, docKey);
 
   useEffect(() => {
     load();
@@ -52,6 +54,7 @@ export function App() {
           <ChatPanel
             messages={chat.messages}
             isStreaming={chat.isStreaming}
+            docKey={docKey}
             contextMode={contextMode}
             onContextModeChange={setContextMode}
             onSend={chat.sendMessage}

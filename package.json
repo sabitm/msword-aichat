@@ -12,7 +12,8 @@
     "stop": "office-addin-debugging stop manifest.xml",
     "validate": "office-addin-manifest validate manifest.xml",
     "validate:prod": "office-addin-manifest validate manifest.prod.xml",
-    "package": "npm run build && node scripts/package-addin.mjs"
+    "package": "npm run build && node scripts/package-addin.mjs",
+    "proxy": "node proxy/dev-proxy.mjs"
   },
   "dependencies": {
     "@fluentui/react-components": "^9.72.7",

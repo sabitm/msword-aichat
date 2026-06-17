@@ -1,12 +1,23 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { runAgent } from "../agent/orchestrator";
+import {
+  appendCustomInstructions,
+  promptOptionsFromPreferences,
+} from "../agent/prompt-options";
+import { expandSlashCommand } from "../agent/slash-commands";
 import { buildAgentSystemPrompt } from "../agent/system-prompt";
 import {
   applyPendingEdit,
   rejectPendingEdit,
   undoPendingEdit,
 } from "../agent/tools/registry";
+import {
+  clearConversation,
+  loadConversation,
+  saveConversation,
+} from "../conversation/store";
 import { createProvider } from "../llm/factory";
+import type { AppPreferences } from "../settings/defaults";
 import { useSettingsStore } from "../settings/store";
 import type { AgentMessage, AgentStep, PendingEdit } from "../types/agent";
 import type { ContextMode } from "../types/context";
@@ -28,22 +39,44 @@ function createId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-function buildChatSystemPrompt(contextBlock: string | null): string {
+function buildChatSystemPrompt(contextBlock: string | null, preferences: AppPreferences): string {
   const base =
     "You are a helpful writing assistant inside Microsoft Word. Be concise and practical.";
 
-  if (!contextBlock) {
-    return `${base} Answer using only the conversation unless the user provides document text.`;
-  }
+  const withContext = contextBlock
+    ? `${base} Use the document context below when answering. If context is empty or missing, say so and ask the user to select text or switch context mode.\n\n${contextBlock}`
+    : `${base} Answer using only the conversation unless the user provides document text.`;
 
-  return `${base} Use the document context below when answering. If context is empty or missing, say so and ask the user to select text or switch context mode.\n\n${contextBlock}`;
+  return appendCustomInstructions(withContext, promptOptionsFromPreferences(preferences));
 }
 
-export function useChat(contextMode: ContextMode) {
+export function useChat(contextMode: ContextMode, docKey: string) {
   const getConfig = useSettingsStore((s) => s.getConfig);
   const getPreferences = useSettingsStore((s) => s.getPreferences);
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const loadedDocKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (docKey === "loading") return;
+
+    if (loadedDocKeyRef.current === docKey) return;
+    loadedDocKeyRef.current = docKey;
+
+    const preferences = getPreferences();
+    if (!preferences.persistConversations || docKey === "browser") {
+      setMessages([]);
+      return;
+    }
+
+    setMessages(loadConversation(docKey));
+  }, [docKey, getPreferences]);
+
+  useEffect(() => {
+    if (docKey === "loading" || docKey === "browser" || isStreaming) return;
+    if (!getPreferences().persistConversations) return;
+    saveConversation(docKey, messages);
+  }, [docKey, getPreferences, isStreaming, messages]);
 
   const updateAssistant = useCallback(
     (assistantId: string, patch: Partial<UiMessage>) => {
@@ -62,10 +95,14 @@ export function useChat(contextMode: ContextMode) {
       if (!trimmed || isStreaming) return;
 
       const preferences = getPreferences();
+      const slash = expandSlashCommand(trimmed);
+      const userVisibleText = slash.displayText;
+      const promptText = slash.promptText;
+
       const userMessage: UiMessage = {
         id: createId(),
         role: "user",
-        content: trimmed,
+        content: userVisibleText,
       };
       const assistantId = createId();
       const assistantMessage: UiMessage = {
@@ -84,24 +121,28 @@ export function useChat(contextMode: ContextMode) {
       setIsStreaming(true);
       trackEvent(
         preferences.interactionMode === "agent" ? "agent_run" : "chat_message_sent",
-        { mode: preferences.interactionMode },
+        {
+          mode: preferences.interactionMode,
+          slash: slash.command ?? "",
+        },
       );
 
       const documentContext = await getDocumentContext(contextMode);
       const contextBlock = buildContextPrompt(documentContext);
+      const promptOptions = promptOptionsFromPreferences(preferences);
 
       try {
         if (preferences.interactionMode === "agent") {
           const agentMessages: AgentMessage[] = [
             {
               role: "system",
-              content: buildAgentSystemPrompt(contextBlock),
+              content: buildAgentSystemPrompt(contextBlock, promptOptions),
             },
             ...messages.map((message) => ({
               role: message.role,
               content: message.content,
             })),
-            { role: "user", content: trimmed },
+            { role: "user", content: promptText },
           ];
 
           const result = await runAgent({
@@ -137,13 +178,13 @@ export function useChat(contextMode: ContextMode) {
         const history: ChatMessage[] = [
           {
             role: "system",
-            content: buildChatSystemPrompt(contextBlock),
+            content: buildChatSystemPrompt(contextBlock, preferences),
           },
           ...messages.map((message) => ({
             role: message.role,
             content: message.content,
           })),
-          { role: "user", content: trimmed },
+          { role: "user", content: promptText },
         ];
 
         const provider = createProvider(getConfig());
@@ -282,7 +323,10 @@ export function useChat(contextMode: ContextMode) {
   const clearMessages = useCallback(() => {
     if (isStreaming) return;
     setMessages([]);
-  }, [isStreaming]);
+    if (docKey !== "loading" && docKey !== "browser") {
+      clearConversation(docKey);
+    }
+  }, [docKey, isStreaming]);
 
   const retryMessage = useCallback(
     async (assistantMessageId: string) => {

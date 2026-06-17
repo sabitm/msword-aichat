@@ -223,6 +223,31 @@ export async function formatAtBookmark(
   }
 }
 
+export async function insertCommentOnSelection(comment: string): Promise<void> {
+  assertWordAvailable();
+  const trimmed = comment.trim();
+  if (!trimmed) {
+    throw new WordOperationError("Comment text is required.");
+  }
+
+  try {
+    await Word.run(async (context) => {
+      const selection = context.document.getSelection();
+      selection.load("text");
+      await context.sync();
+
+      if (!selection.text?.trim()) {
+        throw new WordOperationError("Select text in the document before adding a comment.");
+      }
+
+      selection.insertComment(trimmed);
+      await context.sync();
+    });
+  } catch (error) {
+    wrapWordError(error, "Failed to insert comment.");
+  }
+}
+
 export async function insertTableAtBookmark(
   bookmark: string,
   rows: number,

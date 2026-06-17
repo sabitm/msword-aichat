@@ -10,6 +10,7 @@ import {
   Slider,
   Spinner,
   Text,
+  Textarea,
 } from "@fluentui/react-components";
 import { useState } from "react";
 import { createProvider } from "../../llm/factory";
@@ -156,6 +157,20 @@ export function SettingsPanel() {
       </Field>
 
       <Text size={400} weight="semibold">
+        Instructions & behavior
+      </Text>
+      <Field
+        label="Custom instructions"
+        hint="Appended to every chat and agent system prompt"
+      >
+        <Textarea
+          value={preferences.customInstructions}
+          resize="vertical"
+          onChange={(_event, data) => updatePreferences({ customInstructions: data.value })}
+        />
+      </Field>
+
+      <Text size={400} weight="semibold">
         Agent behavior
       </Text>
       <Checkbox
@@ -166,12 +181,36 @@ export function SettingsPanel() {
       <Text size={200}>
         When off, insert and replace operations show a before/after preview with Apply and Reject.
       </Text>
+      <Checkbox
+        checked={preferences.reviewModeAsComments}
+        onChange={(_event, data) =>
+          updatePreferences({ reviewModeAsComments: Boolean(data.checked) })
+        }
+        label="Review mode — prefer comments over body edits"
+      />
+      <Checkbox
+        checked={preferences.persistConversations}
+        onChange={(_event, data) =>
+          updatePreferences({ persistConversations: Boolean(data.checked) })
+        }
+        label="Remember conversation per document"
+      />
 
+      <Text size={400} weight="semibold">
+        Telemetry
+      </Text>
       <Checkbox
         checked={preferences.telemetryEnabled}
         onChange={(_event, data) => updatePreferences({ telemetryEnabled: Boolean(data.checked) })}
-        label="Send anonymous usage events (opt-in, local debug only for now)"
+        label="Send anonymous usage events"
       />
+      <Field label="Telemetry endpoint (optional)" hint="POST JSON events when telemetry is on">
+        <Input
+          value={preferences.telemetryEndpoint}
+          onChange={(_event, data) => updatePreferences({ telemetryEndpoint: data.value })}
+          placeholder="https://telemetry.example.com/events"
+        />
+      </Field>
 
       <div className="settings-actions">
         <Button appearance="primary" onClick={handleSave}>

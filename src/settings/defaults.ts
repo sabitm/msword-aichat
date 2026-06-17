@@ -15,6 +15,10 @@ export interface AppPreferences {
   autoApplyEdits: boolean;
   onboardingCompleted: boolean;
   telemetryEnabled: boolean;
+  telemetryEndpoint: string;
+  customInstructions: string;
+  persistConversations: boolean;
+  reviewModeAsComments: boolean;
 }
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
@@ -22,6 +26,10 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   autoApplyEdits: false,
   onboardingCompleted: false,
   telemetryEnabled: false,
+  telemetryEndpoint: "",
+  customInstructions: "",
+  persistConversations: true,
+  reviewModeAsComments: false,
 };
 
 export const SETTINGS_STORAGE_KEY = "msword-aichat:provider-config";

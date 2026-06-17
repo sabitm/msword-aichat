@@ -4,6 +4,7 @@ import type { UiMessage } from "../../hooks/useChat";
 import { useDocumentContext } from "../../hooks/useDocumentContext";
 import type { ContextMode } from "../../types/context";
 import { useSettingsStore } from "../../settings/store";
+import { formatDocumentKeyLabel } from "../../word/document-key";
 import { ContextBar } from "./ContextBar";
 import { MessageInput } from "./MessageInput";
 import { MessageList } from "./MessageList";
@@ -13,6 +14,7 @@ import { QuickActions } from "./QuickActions";
 interface ChatPanelProps {
   messages: UiMessage[];
   isStreaming: boolean;
+  docKey: string;
   contextMode: ContextMode;
   onContextModeChange: (mode: ContextMode) => void;
   onSend: (message: string) => void;
@@ -25,6 +27,7 @@ interface ChatPanelProps {
 export function ChatPanel({
   messages,
   isStreaming,
+  docKey,
   contextMode,
   onContextModeChange,
   onSend,
@@ -34,6 +37,7 @@ export function ChatPanel({
   onRetry,
 }: ChatPanelProps) {
   const isConfigured = useSettingsStore((s) => s.isConfigured);
+  const persistConversations = useSettingsStore((s) => s.preferences.persistConversations);
   const { context, isLoading, refresh } = useDocumentContext(contextMode);
   const [contextNotice, setContextNotice] = useState<string | null>(null);
 
@@ -58,6 +62,11 @@ export function ChatPanel({
   return (
     <div className="chat-panel">
       <ModeBar />
+      {persistConversations && docKey !== "loading" && docKey !== "browser" ? (
+        <div className="doc-session-bar">
+          <span>Conversation saved for: {formatDocumentKeyLabel(docKey)}</span>
+        </div>
+      ) : null}
       <ContextBar
         mode={contextMode}
         context={context}

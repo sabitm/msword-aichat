@@ -1,6 +1,10 @@
 import { DOCUMENT_STYLES } from "../types/agent";
+import { appendCustomInstructions, type PromptOptions } from "./prompt-options";
 
-export function buildAgentSystemPrompt(contextBlock: string | null): string {
+export function buildAgentSystemPrompt(
+  contextBlock: string | null,
+  options: PromptOptions = {},
+): string {
   const lines = [
     "You are an agentic writing assistant inside Microsoft Word.",
     "Use the provided tools to read and edit the document.",
@@ -10,6 +14,7 @@ export function buildAgentSystemPrompt(contextBlock: string | null): string {
     "- Use search_document to find text before editing long documents.",
     "- Use delete_range to remove selected text, apply_style for headings, format_range for bold/italic/size.",
     "- Use insert_table for tabular data (rows 1-20, columns 1-10).",
+    "- Use insert_comment to add Word review comments on the current selection.",
     `- Supported styles: ${DOCUMENT_STYLES.join(", ")}.`,
     "- Edits are staged for user approval unless auto-apply is enabled.",
     "- Prefer minimal, targeted edits that preserve the author's intent.",
@@ -21,5 +26,5 @@ export function buildAgentSystemPrompt(contextBlock: string | null): string {
     lines.push("", "Initial document context:", contextBlock);
   }
 
-  return lines.join("\n");
+  return appendCustomInstructions(lines.join("\n"), options);
 }

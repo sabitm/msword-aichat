@@ -10,6 +10,7 @@ import type { FormatOptions } from "../../word/operations";
 import {
   applyStyleAtBookmark,
   formatAtBookmark,
+  insertCommentOnSelection,
   insertTableAtBookmark,
   readBodyTextChunk,
   readSelectionPlain,
@@ -164,6 +165,19 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
+    name: "insert_comment",
+    description:
+      "Add a Word review comment on the current selection. Does not change body text. Requires an active selection.",
+    parameters: {
+      type: "object",
+      properties: {
+        comment: { type: "string", description: "Comment text to attach to the selection." },
+      },
+      required: ["comment"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "insert_table",
     description: "Insert a table after the current selection (or document end if empty).",
     parameters: {
@@ -211,6 +225,8 @@ export async function executeTool(
         return executeFormatRange(argsJson, options.autoApplyEdits);
       case "insert_table":
         return executeInsertTable(argsJson, options.autoApplyEdits);
+      case "insert_comment":
+        return executeInsertComment(argsJson);
       default:
         return failure(name, `Unknown tool: ${name}`);
     }
@@ -451,6 +467,22 @@ async function executeFormatRange(
     success: true,
     output: { pendingApproval: true, format: args, message: "Formatting staged for approval." },
     pendingEdit,
+  };
+}
+
+async function executeInsertComment(argsJson: string): Promise<ToolExecutionResult> {
+  const args = parseArgs<{ comment?: string }>(argsJson);
+  const comment = args.comment?.trim() ?? "";
+  if (!comment) return failure("insert_comment", "comment is required");
+
+  await insertCommentOnSelection(comment);
+  return {
+    success: true,
+    output: {
+      applied: true,
+      preview: comment.slice(0, 200),
+      message: "Comment added to the current selection.",
+    },
   };
 }
 
