@@ -1,3 +1,7 @@
+import type { AgentMessage, AgentRequest, CompletionResult, ToolDefinition } from "./agent";
+
+export type { AgentMessage, AgentRequest, CompletionResult, ToolDefinition };
+
 export type ProviderKind = "openai" | "anthropic";
 
 export interface ProviderConfig {
@@ -14,11 +18,21 @@ export interface ChatMessage {
   content: string;
 }
 
-export type ChatEventType = "text_delta" | "done" | "error";
+export type ChatEventType =
+  | "text_delta"
+  | "tool_call_start"
+  | "tool_call_delta"
+  | "tool_result"
+  | "done"
+  | "error";
 
 export interface ChatEvent {
   type: ChatEventType;
   text?: string;
+  toolCallId?: string;
+  toolName?: string;
+  toolArguments?: string;
+  toolResult?: string;
   error?: string;
 }
 
@@ -27,6 +41,7 @@ export interface ChatRequest {
   stream?: boolean;
   maxTokens?: number;
   temperature?: number;
+  tools?: ToolDefinition[];
 }
 
 export interface PingResult {

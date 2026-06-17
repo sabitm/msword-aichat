@@ -1,3 +1,4 @@
+import type { AgentMessage, CompletionResult, ToolCall } from "../types/agent";
 import type { ChatEvent, ChatRequest, PingResult, ProviderConfig } from "../types/llm";
 import type { LLMProvider } from "./provider";
 import { normalizeBaseUrl } from "./provider";
@@ -6,13 +7,147 @@ interface AnthropicStreamEvent {
   type: string;
   delta?: { type?: string; text?: string };
   error?: { message?: string };
-  message?: { content?: Array<{ type: string; text?: string }> };
+  message?: {
+    content?: Array<
+      | { type: "text"; text?: string }
+      | { type: "tool_use"; id?: string; name?: string; input?: Record<string, unknown> }
+    >;
+  };
+}
+
+interface AnthropicCompletionResponse {
+  content?: Array<
+    | { type: "text"; text?: string }
+    | { type: "tool_use"; id?: string; name?: string; input?: Record<string, unknown> }
+  >;
+  stop_reason?: string;
+  error?: { message?: string };
 }
 
 export class AnthropicCompatibleProvider implements LLMProvider {
   readonly kind = "anthropic" as const;
+  readonly supportsTools = true;
 
   constructor(private readonly config: ProviderConfig) {}
+
+  private toAnthropicMessages(messages: AgentMessage[]) {
+    const result: Array<Record<string, unknown>> = [];
+
+    for (const message of messages) {
+      if (message.role === "system") continue;
+
+      if (message.role === "tool") {
+        result.push({
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: message.toolCallId,
+              content: message.content,
+            },
+          ],
+        });
+        continue;
+      }
+
+      if (message.role === "assistant" && message.toolCalls?.length) {
+        const content: Array<Record<string, unknown>> = [];
+        if (message.content.trim()) {
+          content.push({ type: "text", text: message.content });
+        }
+        for (const call of message.toolCalls) {
+          content.push({
+            type: "tool_use",
+            id: call.id,
+            name: call.name,
+            input: JSON.parse(call.arguments || "{}"),
+          });
+        }
+        result.push({ role: "assistant", content });
+        continue;
+      }
+
+      result.push({
+        role: message.role,
+        content: message.content,
+      });
+    }
+
+    return result;
+  }
+
+  private toAnthropicTools(tools: ChatRequest["tools"]) {
+    return tools?.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      input_schema: tool.parameters,
+    }));
+  }
+
+  async complete(request: Parameters<LLMProvider["complete"]>[0]): Promise<CompletionResult> {
+    const url = `${normalizeBaseUrl(this.config.baseUrl)}/messages`;
+    const systemMessage = request.messages.find((m) => m.role === "system");
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": this.config.apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: this.config.model,
+        system: systemMessage?.content,
+        messages: this.toAnthropicMessages(request.messages),
+        tools: this.toAnthropicTools(request.tools),
+        stream: false,
+        max_tokens: request.maxTokens ?? this.config.maxTokens,
+        temperature: request.temperature ?? this.config.temperature,
+      }),
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      return {
+        text: "",
+        toolCalls: [],
+        stopReason: "error",
+        error: `HTTP ${response.status}: ${body}`,
+      };
+    }
+
+    const json = (await response.json()) as AnthropicCompletionResponse;
+    if (json.error?.message) {
+      return {
+        text: "",
+        toolCalls: [],
+        stopReason: "error",
+        error: json.error.message,
+      };
+    }
+
+    const text =
+      json.content
+        ?.filter((block) => block.type === "text")
+        .map((block) => block.text ?? "")
+        .join("") ?? "";
+
+    const toolCalls: ToolCall[] =
+      json.content
+        ?.filter((block) => block.type === "tool_use")
+        .map((block) => ({
+          id: block.id ?? "",
+          name: block.name ?? "",
+          arguments: JSON.stringify(block.input ?? {}),
+        }))
+        .filter((call) => call.id && call.name) ?? [];
+
+    return {
+      text,
+      toolCalls,
+      stopReason: json.stop_reason === "tool_use" ? "tool_calls" : "end",
+    };
+  }
 
   async *chat(request: ChatRequest): AsyncIterable<ChatEvent> {
     const url = `${normalizeBaseUrl(this.config.baseUrl)}/messages`;
