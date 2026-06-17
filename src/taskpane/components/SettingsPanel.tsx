@@ -13,7 +13,9 @@ import {
 } from "@fluentui/react-components";
 import { useState } from "react";
 import { createProvider } from "../../llm/factory";
+import { fetchModelList } from "../../llm/models";
 import { useSettingsStore } from "../../settings/store";
+import { trackEvent } from "../../telemetry";
 import type { PingResult, ProviderKind } from "../../types/llm";
 
 const providerLabels: Record<ProviderKind, string> = {
@@ -32,6 +34,9 @@ export function SettingsPanel() {
 
   const [pingResult, setPingResult] = useState<PingResult | null>(null);
   const [isPinging, setIsPinging] = useState(false);
+  const [isFetchingModels, setIsFetchingModels] = useState(false);
+  const [modelListMessage, setModelListMessage] = useState<string | null>(null);
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
 
   const handleSave = () => {
     save();
@@ -45,6 +50,7 @@ export function SettingsPanel() {
       const provider = createProvider(config);
       const result = await provider.ping();
       setPingResult(result);
+      trackEvent("connection_test", { ok: result.ok, source: "settings" });
     } catch (error) {
       setPingResult({
         ok: false,
@@ -53,6 +59,18 @@ export function SettingsPanel() {
     } finally {
       setIsPinging(false);
     }
+  };
+
+  const handleFetchModels = async () => {
+    setIsFetchingModels(true);
+    setModelListMessage(null);
+    const result = await fetchModelList(config);
+    setAvailableModels(result.models);
+    setModelListMessage(result.message);
+    if (result.ok && result.models.length && !result.models.includes(config.model)) {
+      update({ model: result.models[0] });
+    }
+    setIsFetchingModels(false);
   };
 
   return (
@@ -94,11 +112,27 @@ export function SettingsPanel() {
         />
       </Field>
 
-      <Field label="Model">
-        <Input
-          value={config.model}
-          onChange={(_event, data) => update({ model: data.value })}
-        />
+      <Field label="Model" hint="Fetch from /models or type a model id">
+        {availableModels.length ? (
+          <Dropdown
+            value={config.model}
+            selectedOptions={[config.model]}
+            onOptionSelect={(_event, data) => {
+              if (data.optionValue) update({ model: data.optionValue });
+            }}
+          >
+            {availableModels.map((model) => (
+              <Option key={model} value={model}>
+                {model}
+              </Option>
+            ))}
+          </Dropdown>
+        ) : (
+          <Input
+            value={config.model}
+            onChange={(_event, data) => update({ model: data.value })}
+          />
+        )}
       </Field>
 
       <Field label={`Max tokens: ${config.maxTokens}`}>
@@ -133,15 +167,35 @@ export function SettingsPanel() {
         When off, insert and replace operations show a before/after preview with Apply and Reject.
       </Text>
 
+      <Checkbox
+        checked={preferences.telemetryEnabled}
+        onChange={(_event, data) => updatePreferences({ telemetryEnabled: Boolean(data.checked) })}
+        label="Send anonymous usage events (opt-in, local debug only for now)"
+      />
+
       <div className="settings-actions">
         <Button appearance="primary" onClick={handleSave}>
           Save settings
+        </Button>
+        <Button
+          appearance="secondary"
+          disabled={!config.apiKey.trim() || isFetchingModels}
+          onClick={() => void handleFetchModels()}
+        >
+          {isFetchingModels ? <Spinner size="tiny" /> : null}
+          Fetch models
         </Button>
         <Button appearance="secondary" disabled={!isConfigured || isPinging} onClick={handlePing}>
           {isPinging ? <Spinner size="tiny" /> : null}
           Test connection
         </Button>
       </div>
+
+      {modelListMessage ? (
+        <MessageBar intent={availableModels.length ? "success" : "warning"}>
+          <MessageBarBody>{modelListMessage}</MessageBarBody>
+        </MessageBar>
+      ) : null}
 
       {pingResult ? (
         <MessageBar intent={pingResult.ok ? "success" : "error"}>

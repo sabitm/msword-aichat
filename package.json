@@ -10,7 +10,9 @@
     "typecheck": "tsc -b --noEmit",
     "start": "office-addin-debugging start manifest.xml",
     "stop": "office-addin-debugging stop manifest.xml",
-    "validate": "office-addin-manifest validate manifest.xml"
+    "validate": "office-addin-manifest validate manifest.xml",
+    "validate:prod": "office-addin-manifest validate manifest.prod.xml",
+    "package": "npm run build && node scripts/package-addin.mjs"
   },
   "dependencies": {
     "@fluentui/react-components": "^9.72.7",

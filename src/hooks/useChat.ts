@@ -11,6 +11,7 @@ import { useSettingsStore } from "../settings/store";
 import type { AgentMessage, AgentStep, PendingEdit } from "../types/agent";
 import type { ContextMode } from "../types/context";
 import type { ChatMessage } from "../types/llm";
+import { trackEvent } from "../telemetry";
 import { buildContextPrompt, getDocumentContext } from "../word/context";
 
 export interface UiMessage {
@@ -56,7 +57,7 @@ export function useChat(contextMode: ContextMode) {
   );
 
   const sendMessage = useCallback(
-    async (content: string) => {
+    async (content: string, options?: { skipUserMessage?: boolean }) => {
       const trimmed = content.trim();
       if (!trimmed || isStreaming) return;
 
@@ -75,8 +76,16 @@ export function useChat(contextMode: ContextMode) {
         steps: preferences.interactionMode === "agent" ? [] : undefined,
       };
 
-      setMessages((prev) => [...prev, userMessage, assistantMessage]);
+      setMessages((prev) =>
+        options?.skipUserMessage
+          ? [...prev, assistantMessage]
+          : [...prev, userMessage, assistantMessage],
+      );
       setIsStreaming(true);
+      trackEvent(
+        preferences.interactionMode === "agent" ? "agent_run" : "chat_message_sent",
+        { mode: preferences.interactionMode },
+      );
 
       const documentContext = await getDocumentContext(contextMode);
       const contextBlock = buildContextPrompt(documentContext);
@@ -163,6 +172,7 @@ export function useChat(contextMode: ContextMode) {
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : "Request failed";
+        trackEvent("error_occurred", { surface: "chat", message });
         updateAssistant(assistantId, {
           isStreaming: false,
           error: message,
@@ -181,6 +191,7 @@ export function useChat(contextMode: ContextMode) {
 
       try {
         await applyPendingEdit(target.pendingEdit);
+        trackEvent("edit_applied", { tool: target.pendingEdit.toolName });
         setMessages((prev) =>
           prev.map((message) =>
             message.id === messageId && message.pendingEdit
@@ -273,10 +284,25 @@ export function useChat(contextMode: ContextMode) {
     setMessages([]);
   }, [isStreaming]);
 
+  const retryMessage = useCallback(
+    async (assistantMessageId: string) => {
+      const assistantIndex = messages.findIndex((message) => message.id === assistantMessageId);
+      if (assistantIndex <= 0 || isStreaming) return;
+
+      const userMessage = messages[assistantIndex - 1];
+      if (userMessage.role !== "user") return;
+
+      setMessages((prev) => prev.filter((message) => message.id !== assistantMessageId));
+      await sendMessage(userMessage.content, { skipUserMessage: true });
+    },
+    [isStreaming, messages, sendMessage],
+  );
+
   return {
     messages,
     isStreaming,
     sendMessage,
+    retryMessage,
     applyEdit,
     rejectEdit,
     undoEdit,

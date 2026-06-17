@@ -4,7 +4,7 @@ A Microsoft Word task-pane add-in that brings AI chat and agentic document editi
 
 ## Status
 
-**Phase 3 complete.** Advanced agent tools, bookmark-based stable apply, and undo for applied edits.
+**Phase 4 complete.** Onboarding wizard, model list fetch, error retry/copy, production packaging.
 
 | Phase | Scope | Status |
 |-------|-------|--------|
@@ -12,7 +12,7 @@ A Microsoft Word task-pane add-in that brings AI chat and agentic document editi
 | 1 | Document context (selection, outline), quick actions | Done |
 | 2 | Agent loop + document edit tools | Done |
 | 3 | Advanced editing (styles, tables, undo) | Done |
-| 4 | Polish, Word on the web, distribution | Planned |
+| 4 | Polish, Word on the web, distribution | Done |
 
 ## Features (today)
 
@@ -30,6 +30,11 @@ A Microsoft Word task-pane add-in that brings AI chat and agentic document editi
 - Document context modes: Selection, Outline, or None
 - Quick actions: **Summarize**, **Improve**, **Explain**
 - API keys stored locally on the device (separate from other settings)
+- **First-run onboarding** — provider setup, connection test, mode selection
+- **Fetch models** — load model list from `/models` when your gateway supports it
+- **Error actions** — Retry failed messages or copy error details
+- **Production package** — `manifest.prod.xml` + `npm run package` for org catalog deployment
+- Opt-in telemetry hooks (local debug only; no remote collection yet)
 
 ## System requirements
 
@@ -122,14 +127,13 @@ Enable **Auto-apply document edits** in Settings to skip the preview.
 
 ## Configuration
 
-On first launch (or when settings are incomplete), the add-in opens **Settings**.
+On first launch, a **5-step onboarding wizard** walks you through setup. You can revisit **Settings** anytime.
 
 1. Choose **OpenAI-compatible** or **Anthropic-compatible**
 2. Set **Base URL** — e.g. `https://api.openai.com/v1` or your gateway URL
-3. Enter **API key** and **model** name
-4. Click **Save settings**
-5. Click **Test connection** to verify the endpoint responds
-6. Switch to **Chat** and send a message
+3. Enter **API key** and **model** name (or click **Fetch models** if `/models` is available)
+4. Click **Save settings** and **Test connection**
+5. Pick default **Chat** or **Agent** mode, then **Get started**
 
 ### Example endpoints
 
@@ -150,6 +154,9 @@ On first launch (or when settings are incomplete), the add-in opens **Settings**
 | `npm run preview` | Preview production build |
 | `npm run typecheck` | Run TypeScript without emitting |
 | `npm run validate` | Validate `manifest.xml` |
+| `npm run validate:prod` | Validate `manifest.prod.xml` template |
+| `npm run package` | Build and assemble `package/` for deployment |
+| `npm run package -- https://host/path` | Package with production manifest URLs filled in |
 
 ## Project structure
 
@@ -194,11 +201,39 @@ Word (Office.js)  ←→  Task Pane UI (React)
 - Custom endpoints must be reachable from the add-in runtime (watch CORS if not using a same-origin proxy)
 - Use HTTPS endpoints in production; the dev server uses a self-signed certificate
 
+## Distribution
+
+Build and create a deployable folder:
+
+```bash
+npm run package -- https://addins.yourcompany.com/msword-aichat
+```
+
+Upload the contents of `package/` to your HTTPS origin. Use `manifest.xml` from that folder for sideloading or Microsoft 365 admin center deployment.
+
+For local development, keep using root `manifest.xml` (localhost URLs).
+
+## Word on the web QA checklist
+
+Manual smoke test in Word on the web before org-wide rollout:
+
+| Area | Test |
+|------|------|
+| Load | Task pane opens from Home → AI Chat |
+| Settings | Save provider, test connection, fetch models |
+| Chat | Stream a response with Selection context |
+| Agent | Run a read-only tool (`get_selection`) |
+| Edits | `replace_text` preview → Apply → Undo |
+| Styles | `apply_style` on a heading |
+| Tables | `insert_table` with 2×2 data |
+| Search | `search_document` returns matches |
+| Errors | Retry and Copy on a failed request |
+
 ## Roadmap
 
 See [AGENTS.md](./AGENTS.md) for the full phased plan and implementation guide for contributors and coding agents.
 
-**Next up (Phase 4):** onboarding, Word on the web QA, production manifest, and distribution.
+**Next up (Phase 5):** slash commands, conversation persistence, enterprise proxy, comments workflow.
 
 ## Troubleshooting
 

@@ -10,20 +10,22 @@ Build a **Microsoft Word task-pane add-in** that provides:
 2. **Agentic editing** via tool calls against Office.js
 3. **Bring-your-own-model** via OpenAI- or Anthropic-compatible HTTP APIs
 
-Phase 3 delivers advanced tools, bookmark-stable apply, and undo. Phase 4 focuses on polish and distribution.
+Phase 4 delivers onboarding, distribution packaging, and polish. Phase 5 is advanced/backlog.
 
 **Minimum supported host:** Word 2016+ or Microsoft 365 Word (not Office 2013).
 
 ---
 
-## Current state (Phase 3 — complete)
+## Current state (Phase 4 — complete)
 
 | Area | Implemented | Location |
 |------|-------------|----------|
-| Office add-in manifest | Yes | `manifest.xml` |
+| Office add-in manifest | Yes | `manifest.xml` (dev), `manifest.prod.xml` (deploy) |
 | Vite + React + TypeScript shell | Yes | `taskpane.html`, `src/taskpane/` |
 | Provider settings UI | Yes | `src/taskpane/components/SettingsPanel.tsx` |
+| First-run onboarding | Yes | `src/taskpane/components/OnboardingWizard.tsx` |
 | Settings persistence | Yes | `src/settings/store.ts` |
+| Model list fetch (`/models`) | Yes | `src/llm/models.ts` |
 | OpenAI-compatible adapter + tools | Yes | `src/llm/openai-compatible.ts` |
 | Anthropic-compatible adapter + tools | Yes | `src/llm/anthropic-compatible.ts` |
 | Chat mode (streaming) | Yes | `src/hooks/useChat.ts` |
@@ -33,8 +35,12 @@ Phase 3 delivers advanced tools, bookmark-stable apply, and undo. Phase 4 focuse
 | Range bookmarks (stable apply) | Yes | `src/word/ranges.ts` |
 | Undo snapshots | Yes | `src/word/undo.ts` |
 | Edit preview + Undo UI | Yes | `EditPreview.tsx` |
+| Error retry + copy | Yes | `ErrorActions.tsx`, `useChat.retryMessage` |
 | Agent step trace | Yes | `AgentTrace.tsx` |
 | Word context (selection, outline) | Yes | `src/word/context.ts` |
+| Distribution package script | Yes | `scripts/package-addin.mjs` |
+| Opt-in telemetry stub | Yes | `src/telemetry/index.ts` |
+| Vite code-splitting | Yes | `vite.config.ts` (fluent + react chunks) |
 
 ---
 
@@ -176,9 +182,13 @@ Delivered: `search_document`, `delete_range`, `apply_style`, `format_range`, `in
 - Bookmark deletion is not exposed by Word JS API; `msword_aichat_*` bookmarks may remain.
 - `insert_table` undo deletes the last document table (best-effort).
 
-### Phase 4 — Polish & ship (next)
+### Phase 4 — Polish & ship (complete)
 
-Onboarding, Word on the web QA, optional `/models` fetch, distribution package.
+Delivered: onboarding wizard, `/models` fetch, error retry/copy, `manifest.prod.xml`, `npm run package`, Vite code-splitting, opt-in telemetry stub, Word on the web QA checklist in README.
+
+### Phase 5 — Advanced / backlog (next)
+
+Slash commands, conversation persistence, enterprise proxy, comments workflow.
 
 ---
 
@@ -238,6 +248,7 @@ npm start            # sideload in Word (Desktop)
 npm run build        # production build
 npm run typecheck
 npm run validate     # manifest.xml
+npm run package      # build + assemble package/ for deployment
 ```
 
 ### Verification checklist (run before marking a phase done)

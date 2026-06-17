@@ -13,11 +13,15 @@ export const DEFAULT_PROVIDER_CONFIG: ProviderConfig = {
 export interface AppPreferences {
   interactionMode: InteractionMode;
   autoApplyEdits: boolean;
+  onboardingCompleted: boolean;
+  telemetryEnabled: boolean;
 }
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
   interactionMode: "agent",
   autoApplyEdits: false,
+  onboardingCompleted: false,
+  telemetryEnabled: false,
 };
 
 export const SETTINGS_STORAGE_KEY = "msword-aichat:provider-config";

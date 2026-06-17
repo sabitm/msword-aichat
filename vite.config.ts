@@ -15,6 +15,16 @@ export default defineConfig({
         taskpane: "taskpane.html",
         commands: "commands.html",
       },
+      output: {
+        manualChunks(id) {
+          if (id.includes("@fluentui/react-components") || id.includes("@fluentui/react-icons")) {
+            return "fluent";
+          }
+          if (id.includes("node_modules/react-dom") || id.includes("node_modules/react/")) {
+            return "react";
+          }
+        },
+      },
     },
   },
 });

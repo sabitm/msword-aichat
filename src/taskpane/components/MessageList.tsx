@@ -2,6 +2,7 @@ import { Spinner, Text } from "@fluentui/react-components";
 import type { UiMessage } from "../../hooks/useChat";
 import { AgentTrace } from "./AgentTrace";
 import { EditPreview } from "./EditPreview";
+import { ErrorActions } from "./ErrorActions";
 
 interface MessageListProps {
   messages: UiMessage[];
@@ -9,6 +10,7 @@ interface MessageListProps {
   onApplyEdit: (messageId: string) => void;
   onRejectEdit: (messageId: string) => void;
   onUndoEdit: (messageId: string) => void;
+  onRetry?: (messageId: string) => void;
 }
 
 export function MessageList({
@@ -17,6 +19,7 @@ export function MessageList({
   onApplyEdit,
   onRejectEdit,
   onUndoEdit,
+  onRetry,
 }: MessageListProps) {
   if (messages.length === 0) {
     return (
@@ -35,17 +38,16 @@ export function MessageList({
     <div className="message-list">
       {messages.map((message) => (
         <div key={message.id} className="message-block">
-          <div
-            className={`message-bubble ${message.role}${message.error ? " error" : ""}`}
-          >
+          <div className={`message-bubble ${message.role}${message.error ? " error" : ""}`}>
             {message.content || (message.isStreaming ? "" : "…")}
-            {message.error ? (
-              <div>
-                <br />
-                <strong>Error:</strong> {message.error}
-              </div>
-            ) : null}
           </div>
+          {message.error ? (
+            <ErrorActions
+              error={message.error}
+              disabled={isStreaming}
+              onRetry={onRetry ? () => onRetry(message.id) : undefined}
+            />
+          ) : null}
           {message.role === "assistant" && message.steps?.length ? (
             <AgentTrace steps={message.steps} />
           ) : null}

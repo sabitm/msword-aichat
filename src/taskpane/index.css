@@ -233,3 +233,62 @@ body,
   display: flex;
   gap: 8px;
 }
+
+.error-actions {
+  width: 100%;
+}
+
+.onboarding-overlay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  padding: 16px;
+  background: #faf9f8;
+}
+
+.onboarding-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 420px;
+  padding: 20px;
+  border: 1px solid #e0e0e0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.onboarding-steps {
+  color: #616161;
+}
+
+.onboarding-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.onboarding-form {
+  gap: 14px;
+}
+
+.onboarding-list {
+  margin: 0;
+  padding-left: 20px;
+  color: #424242;
+}
+
+.onboarding-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.settings-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+}

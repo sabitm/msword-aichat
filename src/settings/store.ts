@@ -19,6 +19,7 @@ interface SettingsState {
   updatePreferences: (patch: Partial<AppPreferences>) => void;
   setKind: (kind: ProviderKind) => void;
   setInteractionMode: (mode: InteractionMode) => void;
+  completeOnboarding: () => void;
   save: () => void;
   getConfig: () => ProviderConfig;
   getPreferences: () => AppPreferences;
@@ -94,6 +95,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   setInteractionMode: (mode) => {
     get().updatePreferences({ interactionMode: mode });
+  },
+
+  completeOnboarding: () => {
+    get().updatePreferences({ onboardingCompleted: true });
+    get().save();
   },
 
   save: () => {

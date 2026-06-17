@@ -49,3 +49,9 @@ export interface PingResult {
   message: string;
   latencyMs?: number;
 }
+
+export interface ModelListResult {
+  ok: boolean;
+  models: string[];
+  message: string;
+}
