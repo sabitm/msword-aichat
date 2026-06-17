@@ -2,20 +2,7 @@
 
 A Microsoft Word task-pane add-in that brings AI chat and agentic document editing to Word. Connect any **OpenAI-compatible** or **Anthropic-compatible** endpoint (OpenAI, Anthropic, LiteLLM, vLLM, Ollama gateways, private proxies, etc.).
 
-## Status
-
-**Phase 5 complete.** Per-document conversations, custom instructions, slash commands, review comments, dev proxy.
-
-| Phase | Scope | Status |
-|-------|-------|--------|
-| 0 | Scaffold, settings, streaming chat | Done |
-| 1 | Document context (selection, outline), quick actions | Done |
-| 2 | Agent loop + document edit tools | Done |
-| 3 | Advanced editing (styles, tables, undo) | Done |
-| 4 | Polish, Word on the web, distribution | Done |
-| 5 | Advanced features (persistence, slash cmds, comments) | Done |
-
-## Features (today)
+## Features
 
 - Task-pane UI on the Word **Home** tab (**AI Chat** button)
 - Provider settings: type, base URL, API key, model, temperature, max tokens
@@ -247,12 +234,6 @@ Manual smoke test in Word on the web before org-wide rollout:
 | Search | `search_document` returns matches |
 | Errors | Retry and Copy on a failed request |
 
-## Roadmap
-
-See [AGENTS.md](./AGENTS.md) for the full phased plan and implementation guide for contributors and coding agents.
-
-**Backlog:** RAG over attachments, voice input, multi-document awareness, AppSource assets.
-
 ## Troubleshooting
 
 **Add-in does not load**
@@ -280,4 +261,4 @@ npm run validate
 
 ## License
 
-Private project — license TBD.
+MIT — see [LICENSE](./LICENSE).
