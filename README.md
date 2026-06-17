@@ -4,12 +4,12 @@ A Microsoft Word task-pane add-in that brings AI chat — and eventually agentic
 
 ## Status
 
-**Phase 0 complete.** The add-in loads in Word, persists provider settings locally, tests connectivity, and streams chat responses.
+**Phase 1 complete.** The add-in reads Word selection and document outline, attaches context to chat prompts, and offers quick actions.
 
 | Phase | Scope | Status |
 |-------|-------|--------|
 | 0 | Scaffold, settings, streaming chat | Done |
-| 1 | Document context (selection, outline), quick actions | Planned |
+| 1 | Document context (selection, outline), quick actions | Done |
 | 2 | Agent loop + document edit tools | Planned |
 | 3 | Advanced editing (styles, tables, undo) | Planned |
 | 4 | Polish, Word on the web, distribution | Planned |
@@ -20,12 +20,27 @@ A Microsoft Word task-pane add-in that brings AI chat — and eventually agentic
 - Provider settings: type, base URL, API key, model, temperature, max tokens
 - Connection test against your configured endpoint
 - Streaming chat with conversation history (in-memory per session)
+- **Document context modes:** Selection, Outline, or None
+- Context token estimate and refresh
+- Quick actions: **Summarize**, **Improve**, **Explain**
 - API keys stored locally on the device (separate from other settings)
+
+## System requirements
+
+| Platform | Minimum | Recommended |
+|----------|---------|-------------|
+| **Word on Windows** | Word **2016** + Microsoft Edge installed | **Microsoft 365** Word |
+| **Word on Mac** | Word **15.18**+ (2016-era) | **Microsoft 365** Word for Mac |
+| **Word on the web** | Modern browser (Edge, Chrome, Firefox, Safari) | Microsoft 365 account |
+
+**Not supported:** Office 2013 and earlier. The add-in uses ribbon commands, a modern web stack (React 19), and the Word JavaScript API — all of which require Word 2016 or newer.
+
+**Development:** Node.js 20+
 
 ## Prerequisites
 
 - **Node.js** 20+
-- **Microsoft Word** (Desktop on Windows or Mac) for full add-in testing
+- **Microsoft Word 2016+** or **Microsoft 365 Word** (Desktop on Windows or Mac) for full add-in testing
 - An OpenAI- or Anthropic-compatible API endpoint and API key
 
 ## Quick start
@@ -57,7 +72,19 @@ npm stop
 
 ### Browser-only UI test
 
-Open [https://localhost:3000/taskpane.html](https://localhost:3000/taskpane.html) in a browser. Chat and settings work, but Office.js document APIs are unavailable outside Word.
+Open [https://localhost:3000/taskpane.html](https://localhost:3000/taskpane.html) in a browser. Chat and settings work, but Word document context APIs are unavailable outside Word.
+
+## Using document context
+
+1. Open **AI Chat** in Word
+2. Choose a **Context** mode:
+   - **Selection** — sends the currently selected text with each message
+   - **Outline** — sends the document heading structure
+   - **None** — chat without document context
+3. Click **Refresh** to re-read the document before sending
+4. Use **Quick actions** (Summarize / Improve / Explain) with Selection or Outline context
+
+Select text in your document, choose **Selection** context, then click **Summarize** to get a summary grounded in that text.
 
 ## Configuration
 
@@ -100,8 +127,9 @@ msword-aichat/
 ├── public/assets/            # Add-in icons
 └── src/
     ├── llm/                  # OpenAI & Anthropic-compatible providers
+    ├── word/                 # Document context (selection, outline)
     ├── settings/             # Zustand store + defaults
-    ├── hooks/                # useChat streaming hook
+    ├── hooks/                # useChat, useDocumentContext
     ├── types/                # Shared TypeScript types
     └── taskpane/             # React UI (App, Chat, Settings)
 ```
@@ -110,10 +138,10 @@ msword-aichat/
 
 ```
 Word (Office.js)  ←→  Task Pane UI (React)
-                           ↓
-                     useChat hook
-                           ↓
-                     LLM Provider Adapter  →  Your API endpoint
+         ↓                    ↓
+   Document context      useChat hook
+   (selection/outline)         ↓
+                          LLM Provider  →  Your API endpoint
 ```
 
 - **UI:** React 19, Fluent UI v9, Zustand for settings
@@ -123,7 +151,8 @@ Word (Office.js)  ←→  Task Pane UI (React)
 ## Security notes
 
 - API keys are stored in `localStorage` on the local machine only
-- Document text is **not** sent to the LLM yet (Phase 1 adds opt-in context)
+- Document context (selection or outline) is sent to your configured LLM endpoint when context mode is not **None**
+- Context is truncated at ~12,000 characters to limit prompt size
 - Custom endpoints must be reachable from the add-in runtime (watch CORS if not using a same-origin proxy)
 - Use HTTPS endpoints in production; the dev server uses a self-signed certificate
 
@@ -131,7 +160,7 @@ Word (Office.js)  ←→  Task Pane UI (React)
 
 See [AGENTS.md](./AGENTS.md) for the full phased plan and implementation guide for contributors and coding agents.
 
-**Next up (Phase 1):** read Word selection and document outline, show context in the chat UI, and add quick actions (summarize, improve, explain).
+**Next up (Phase 2):** agent orchestrator with document edit tools, diff preview, and apply/reject flow.
 
 ## Troubleshooting
 
@@ -140,12 +169,17 @@ See [AGENTS.md](./AGENTS.md) for the full phased plan and implementation guide f
 - Confirm `npm run dev` is running and reachable at `https://localhost:3000`
 - Accept the self-signed certificate warning in your browser once
 - Re-run `npm start` to re-register the manifest
+- Requires **Word 2016+** or **Microsoft 365 Word**
 
 **Connection test fails**
 
 - Verify base URL, API key, and model name
 - Check gateway CORS headers if calling a remote proxy from the task pane
 - Try the same request with `curl` against your endpoint
+
+**Context shows "No text selected"**
+
+- Highlight text in the document, then click the refresh button in the context bar
 
 **Manifest validation**
 

@@ -10,11 +10,13 @@ Build a **Microsoft Word task-pane add-in** that provides:
 2. **Agentic editing** via tool calls against Office.js (planned)
 3. **Bring-your-own-model** via OpenAI- or Anthropic-compatible HTTP APIs
 
-The agent loop and document tools are **not implemented yet**. Phase 0 delivers scaffold, settings, connection test, and streaming chat only.
+The agent loop and document edit tools are **not implemented yet**. Phase 1 delivers document context in chat prompts; Phase 2 adds the tool loop.
+
+**Minimum supported host:** Word 2016+ or Microsoft 365 Word (not Office 2013).
 
 ---
 
-## Current state (Phase 0 — complete)
+## Current state (Phase 1 — complete)
 
 | Area | Implemented | Location |
 |------|-------------|----------|
@@ -25,9 +27,10 @@ The agent loop and document tools are **not implemented yet**. Phase 0 delivers 
 | OpenAI-compatible adapter | Yes | `src/llm/openai-compatible.ts` |
 | Anthropic-compatible adapter | Yes | `src/llm/anthropic-compatible.ts` |
 | Streaming chat | Yes | `src/hooks/useChat.ts` |
-| Agent orchestrator | No | `src/agent/` (to be created in Phase 2) |
-| Document tools | No | `src/agent/tools/` (Phase 2) |
-| Word context builder | No | `src/word/` (Phase 1) |
+| Word context (selection, outline) | Yes | `src/word/context.ts` |
+| Context mode UI + quick actions | Yes | `ContextBar.tsx`, `QuickActions.tsx` |
+| Agent orchestrator | No | `src/agent/` (Phase 2) |
+| Document edit tools | No | `src/agent/tools/` (Phase 2) |
 
 ---
 
@@ -44,9 +47,13 @@ src/
 │   ├── defaults.ts           # DEFAULT_PROVIDER_CONFIG, storage keys
 │   └── store.ts              # Zustand: load/save/getConfig
 ├── hooks/
-│   └── useChat.ts            # Streaming chat state (UI layer only)
+│   ├── useChat.ts            # Streaming chat with document context injection
+│   └── useDocumentContext.ts # Context preview + refresh
+├── word/
+│   └── context.ts            # getSelectionText, getDocumentOutline, estimateTokens
 ├── types/
-│   └── llm.ts                # ProviderConfig, ChatMessage, ChatEvent, PingResult
+│   ├── llm.ts                # ProviderConfig, ChatMessage, ChatEvent, PingResult
+│   └── context.ts            # ContextMode, DocumentContext
 └── taskpane/
     ├── main.tsx              # Office.onReady → render App
     ├── App.tsx               # View routing: chat | settings
@@ -160,23 +167,11 @@ flowchart TB
 
 ## Phased roadmap (implementation order)
 
-### Phase 1 — Document context (next)
+### Phase 1 — Document context (complete)
 
-**Goal:** Ground chat in document content without agent tools yet.
+Delivered: `src/word/context.ts`, context mode bar, token estimate, quick actions, context injected into `useChat` system prompt.
 
-Tasks:
-
-1. Create `src/word/context.ts`:
-   - `getSelectionText()` — selected text + metadata
-   - `getDocumentOutline()` — heading hierarchy via Office.js
-   - `estimateTokens(text)` — rough heuristic for UI badge
-2. Add context mode selector in chat UI: Selection | Outline | None
-3. Inject context into `useChat` system/user preamble (explicit, bounded size)
-4. Quick-action buttons: Summarize, Improve, Explain (single-shot prompts)
-
-**Exit criteria:** User selects a paragraph → "Summarize" → response references actual selection text.
-
-### Phase 2 — Agent MVP
+### Phase 2 — Agent MVP (next)
 
 **Goal:** Multi-step tool loop with safe apply flow.
 
