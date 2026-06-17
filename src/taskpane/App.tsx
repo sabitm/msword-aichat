@@ -40,6 +40,8 @@ export function App() {
             contextMode={contextMode}
             onContextModeChange={setContextMode}
             onSend={chat.sendMessage}
+            onApplyEdit={(messageId) => void chat.applyEdit(messageId)}
+            onRejectEdit={chat.rejectEdit}
           />
         ) : (
           <div className="panel-body">

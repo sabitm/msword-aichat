@@ -7,6 +7,7 @@ import { useSettingsStore } from "../../settings/store";
 import { ContextBar } from "./ContextBar";
 import { MessageInput } from "./MessageInput";
 import { MessageList } from "./MessageList";
+import { ModeBar } from "./ModeBar";
 import { QuickActions } from "./QuickActions";
 
 interface ChatPanelProps {
@@ -15,6 +16,8 @@ interface ChatPanelProps {
   contextMode: ContextMode;
   onContextModeChange: (mode: ContextMode) => void;
   onSend: (message: string) => void;
+  onApplyEdit: (messageId: string) => void;
+  onRejectEdit: (messageId: string) => void;
 }
 
 export function ChatPanel({
@@ -23,6 +26,8 @@ export function ChatPanel({
   contextMode,
   onContextModeChange,
   onSend,
+  onApplyEdit,
+  onRejectEdit,
 }: ChatPanelProps) {
   const isConfigured = useSettingsStore((s) => s.isConfigured);
   const { context, isLoading, refresh } = useDocumentContext(contextMode);
@@ -48,6 +53,7 @@ export function ChatPanel({
 
   return (
     <div className="chat-panel">
+      <ModeBar />
       <ContextBar
         mode={contextMode}
         context={context}
@@ -74,7 +80,12 @@ export function ChatPanel({
           disabled={!isConfigured || isStreaming}
           onAction={handleQuickAction}
         />
-        <MessageList messages={messages} isStreaming={isStreaming} />
+        <MessageList
+          messages={messages}
+          isStreaming={isStreaming}
+          onApplyEdit={onApplyEdit}
+          onRejectEdit={onRejectEdit}
+        />
       </div>
       <MessageInput
         disabled={!isConfigured || isStreaming}

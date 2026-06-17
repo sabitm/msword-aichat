@@ -1,5 +1,6 @@
 import {
   Button,
+  Checkbox,
   Dropdown,
   Field,
   Input,
@@ -22,7 +23,9 @@ const providerLabels: Record<ProviderKind, string> = {
 
 export function SettingsPanel() {
   const config = useSettingsStore((s) => s.config);
+  const preferences = useSettingsStore((s) => s.preferences);
   const update = useSettingsStore((s) => s.update);
+  const updatePreferences = useSettingsStore((s) => s.updatePreferences);
   const setKind = useSettingsStore((s) => s.setKind);
   const save = useSettingsStore((s) => s.save);
   const isConfigured = useSettingsStore((s) => s.isConfigured);
@@ -117,6 +120,18 @@ export function SettingsPanel() {
           onChange={(_event, data) => update({ temperature: data.value })}
         />
       </Field>
+
+      <Text size={400} weight="semibold">
+        Agent behavior
+      </Text>
+      <Checkbox
+        checked={preferences.autoApplyEdits}
+        onChange={(_event, data) => updatePreferences({ autoApplyEdits: Boolean(data.checked) })}
+        label="Auto-apply document edits without preview"
+      />
+      <Text size={200}>
+        When off, insert and replace operations show a before/after preview with Apply and Reject.
+      </Text>
 
       <div className="settings-actions">
         <Button appearance="primary" onClick={handleSave}>

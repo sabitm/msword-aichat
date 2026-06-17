@@ -1,6 +1,10 @@
 import { useCallback, useState } from "react";
+import { runAgent } from "../agent/orchestrator";
+import { buildAgentSystemPrompt } from "../agent/system-prompt";
+import { applyPendingEdit } from "../agent/tools/registry";
 import { createProvider } from "../llm/factory";
 import { useSettingsStore } from "../settings/store";
+import type { AgentMessage, AgentStep, PendingEdit } from "../types/agent";
 import type { ContextMode } from "../types/context";
 import type { ChatMessage } from "../types/llm";
 import { buildContextPrompt, getDocumentContext } from "../word/context";
@@ -11,13 +15,15 @@ export interface UiMessage {
   content: string;
   isStreaming?: boolean;
   error?: string;
+  steps?: AgentStep[];
+  pendingEdit?: PendingEdit;
 }
 
 function createId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-function buildSystemPrompt(contextBlock: string | null): string {
+function buildChatSystemPrompt(contextBlock: string | null): string {
   const base =
     "You are a helpful writing assistant inside Microsoft Word. Be concise and practical.";
 
@@ -30,14 +36,27 @@ function buildSystemPrompt(contextBlock: string | null): string {
 
 export function useChat(contextMode: ContextMode) {
   const getConfig = useSettingsStore((s) => s.getConfig);
+  const getPreferences = useSettingsStore((s) => s.getPreferences);
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+
+  const updateAssistant = useCallback(
+    (assistantId: string, patch: Partial<UiMessage>) => {
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === assistantId ? { ...message, ...patch } : message,
+        ),
+      );
+    },
+    [],
+  );
 
   const sendMessage = useCallback(
     async (content: string) => {
       const trimmed = content.trim();
       if (!trimmed || isStreaming) return;
 
+      const preferences = getPreferences();
       const userMessage: UiMessage = {
         id: createId(),
         role: "user",
@@ -49,6 +68,7 @@ export function useChat(contextMode: ContextMode) {
         role: "assistant",
         content: "",
         isStreaming: true,
+        steps: preferences.interactionMode === "agent" ? [] : undefined,
       };
 
       setMessages((prev) => [...prev, userMessage, assistantMessage]);
@@ -57,69 +77,144 @@ export function useChat(contextMode: ContextMode) {
       const documentContext = await getDocumentContext(contextMode);
       const contextBlock = buildContextPrompt(documentContext);
 
-      const history: ChatMessage[] = [
-        {
-          role: "system",
-          content: buildSystemPrompt(contextBlock),
-        },
-        ...messages.map((m) => ({
-          role: m.role,
-          content: m.content,
-        })),
-        { role: "user", content: trimmed },
-      ];
-
       try {
+        if (preferences.interactionMode === "agent") {
+          const agentMessages: AgentMessage[] = [
+            {
+              role: "system",
+              content: buildAgentSystemPrompt(contextBlock),
+            },
+            ...messages.map((message) => ({
+              role: message.role,
+              content: message.content,
+            })),
+            { role: "user", content: trimmed },
+          ];
+
+          const result = await runAgent({
+            config: getConfig(),
+            messages: agentMessages,
+            autoApplyEdits: preferences.autoApplyEdits,
+            onStep: (step) => {
+              setMessages((prev) =>
+                prev.map((message) => {
+                  if (message.id !== assistantId) return message;
+                  const steps = [...(message.steps ?? []), step];
+                  return {
+                    ...message,
+                    steps,
+                    content:
+                      step.type === "text" && step.text ? step.text : message.content,
+                  };
+                }),
+              );
+            },
+          });
+
+          updateAssistant(assistantId, {
+            content: result.text,
+            steps: result.steps,
+            pendingEdit: result.pendingEdit,
+            isStreaming: false,
+            error: result.error,
+          });
+          return;
+        }
+
+        const history: ChatMessage[] = [
+          {
+            role: "system",
+            content: buildChatSystemPrompt(contextBlock),
+          },
+          ...messages.map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
+          { role: "user", content: trimmed },
+        ];
+
         const provider = createProvider(getConfig());
         for await (const event of provider.chat({ messages: history, stream: true })) {
           if (event.type === "text_delta" && event.text) {
             setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantId
-                  ? { ...m, content: m.content + event.text }
-                  : m,
+              prev.map((message) =>
+                message.id === assistantId
+                  ? { ...message, content: message.content + event.text }
+                  : message,
               ),
             );
           }
 
           if (event.type === "error") {
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantId
-                  ? {
-                      ...m,
-                      isStreaming: false,
-                      error: event.error ?? "Unknown error",
-                    }
-                  : m,
-              ),
-            );
+            updateAssistant(assistantId, {
+              isStreaming: false,
+              error: event.error ?? "Unknown error",
+            });
             return;
           }
 
           if (event.type === "done") {
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantId ? { ...m, isStreaming: false } : m,
-              ),
-            );
+            updateAssistant(assistantId, { isStreaming: false });
           }
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : "Request failed";
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantId
-              ? { ...m, isStreaming: false, error: message }
-              : m,
-          ),
-        );
+        updateAssistant(assistantId, {
+          isStreaming: false,
+          error: message,
+        });
       } finally {
         setIsStreaming(false);
       }
     },
-    [contextMode, getConfig, isStreaming, messages],
+    [contextMode, getConfig, getPreferences, isStreaming, messages, updateAssistant],
   );
+
+  const applyEdit = useCallback(
+    async (messageId: string) => {
+      const target = messages.find((message) => message.id === messageId);
+      if (!target?.pendingEdit || target.pendingEdit.status !== "pending") return;
+
+      try {
+        await applyPendingEdit(target.pendingEdit);
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === messageId && message.pendingEdit
+              ? {
+                  ...message,
+                  pendingEdit: { ...message.pendingEdit, status: "applied" },
+                  content: `${message.content}\n\nEdit applied successfully.`,
+                }
+              : message,
+          ),
+        );
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "Failed to apply edit";
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === messageId
+              ? { ...message, error: errorMessage }
+              : message,
+          ),
+        );
+      }
+    },
+    [messages],
+  );
+
+  const rejectEdit = useCallback((messageId: string) => {
+    setMessages((prev) =>
+      prev.map((message) =>
+        message.id === messageId && message.pendingEdit
+          ? {
+              ...message,
+              pendingEdit: { ...message.pendingEdit, status: "rejected" },
+              content: `${message.content}\n\nEdit rejected.`,
+            }
+          : message,
+      ),
+    );
+  }, []);
 
   const clearMessages = useCallback(() => {
     if (isStreaming) return;
@@ -130,6 +225,8 @@ export function useChat(contextMode: ContextMode) {
     messages,
     isStreaming,
     sendMessage,
+    applyEdit,
+    rejectEdit,
     clearMessages,
   };
 }
