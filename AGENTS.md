@@ -258,6 +258,7 @@ npm run typecheck
 npm run validate     # manifest.xml
 npm run package      # build + assemble package/ for deployment
 npm run proxy        # local CORS proxy for dev gateways
+npm run smoke        # automated smoke test pass
 ```
 
 ### Verification checklist (run before marking a phase done)

@@ -164,6 +164,7 @@ On first launch, a **5-step onboarding wizard** walks you through setup. You can
 | `npm run package` | Build and assemble `package/` for deployment |
 | `npm run package -- https://host/path` | Package with production manifest URLs filled in |
 | `npm run proxy` | Start local CORS proxy on port 8787 (see below) |
+| `npm run smoke` | Run automated smoke test (build, validate, dev server, contracts) |
 
 ## Project structure
 
