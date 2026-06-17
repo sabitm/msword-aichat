@@ -1,5 +1,27 @@
 export type InteractionMode = "chat" | "agent";
 
+export type MutationToolName =
+  | "insert_text"
+  | "replace_text"
+  | "delete_range"
+  | "apply_style"
+  | "format_range"
+  | "insert_table";
+
+export type UndoSnapshotKind = MutationToolName;
+
+export interface UndoSnapshot {
+  kind: UndoSnapshotKind;
+  bookmark: string;
+  previousText: string;
+  previousStyle?: DocumentStyleName;
+  previousFormat?: {
+    bold?: boolean;
+    italic?: boolean;
+    font_size?: number;
+  };
+}
+
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -25,21 +47,18 @@ export interface AgentStep {
   error?: string;
 }
 
-export type PendingEditStatus = "pending" | "applied" | "rejected";
+export type PendingEditStatus = "pending" | "applied" | "rejected" | "undone";
 
 export interface PendingEdit {
   id: string;
-  toolName: string;
+  toolName: MutationToolName | string;
   description: string;
   before: string;
   after: string;
   status: PendingEditStatus;
-}
-
-export interface PendingEditAction {
-  toolName: "insert_text" | "replace_text";
-  text: string;
-  location?: "selection" | "end";
+  bookmark?: string;
+  undo?: UndoSnapshot;
+  payload?: Record<string, unknown>;
 }
 
 export interface ToolExecutionResult {
@@ -79,3 +98,14 @@ export interface AgentRunResult {
 }
 
 export const MAX_AGENT_STEPS = 10;
+
+export const DOCUMENT_STYLES = [
+  "Normal",
+  "Heading1",
+  "Heading2",
+  "Heading3",
+  "Title",
+  "Subtitle",
+] as const;
+
+export type DocumentStyleName = (typeof DOCUMENT_STYLES)[number];

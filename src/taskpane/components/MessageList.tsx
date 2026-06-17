@@ -8,6 +8,7 @@ interface MessageListProps {
   isStreaming: boolean;
   onApplyEdit: (messageId: string) => void;
   onRejectEdit: (messageId: string) => void;
+  onUndoEdit: (messageId: string) => void;
 }
 
 export function MessageList({
@@ -15,6 +16,7 @@ export function MessageList({
   isStreaming,
   onApplyEdit,
   onRejectEdit,
+  onUndoEdit,
 }: MessageListProps) {
   if (messages.length === 0) {
     return (
@@ -53,6 +55,7 @@ export function MessageList({
               disabled={isStreaming}
               onApply={() => onApplyEdit(message.id)}
               onReject={() => onRejectEdit(message.id)}
+              onUndo={() => onUndoEdit(message.id)}
             />
           ) : null}
         </div>

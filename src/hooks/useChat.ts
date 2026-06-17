@@ -1,7 +1,11 @@
 import { useCallback, useState } from "react";
 import { runAgent } from "../agent/orchestrator";
 import { buildAgentSystemPrompt } from "../agent/system-prompt";
-import { applyPendingEdit } from "../agent/tools/registry";
+import {
+  applyPendingEdit,
+  rejectPendingEdit,
+  undoPendingEdit,
+} from "../agent/tools/registry";
 import { createProvider } from "../llm/factory";
 import { useSettingsStore } from "../settings/store";
 import type { AgentMessage, AgentStep, PendingEdit } from "../types/agent";
@@ -202,19 +206,67 @@ export function useChat(contextMode: ContextMode) {
     [messages],
   );
 
-  const rejectEdit = useCallback((messageId: string) => {
-    setMessages((prev) =>
-      prev.map((message) =>
-        message.id === messageId && message.pendingEdit
-          ? {
-              ...message,
-              pendingEdit: { ...message.pendingEdit, status: "rejected" },
-              content: `${message.content}\n\nEdit rejected.`,
-            }
-          : message,
-      ),
-    );
-  }, []);
+  const rejectEdit = useCallback(
+    async (messageId: string) => {
+      const target = messages.find((message) => message.id === messageId);
+      if (!target?.pendingEdit || target.pendingEdit.status !== "pending") return;
+
+      try {
+        await rejectPendingEdit(target.pendingEdit);
+      } catch {
+        // Best-effort bookmark cleanup.
+      }
+
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === messageId && message.pendingEdit
+            ? {
+                ...message,
+                pendingEdit: { ...message.pendingEdit, status: "rejected" },
+                content: `${message.content}\n\nEdit rejected.`,
+              }
+            : message,
+        ),
+      );
+    },
+    [messages],
+  );
+
+  const undoEdit = useCallback(
+    async (messageId: string) => {
+      const target = messages.find((message) => message.id === messageId);
+      if (
+        !target?.pendingEdit ||
+        target.pendingEdit.status !== "applied" ||
+        !target.pendingEdit.undo
+      ) {
+        return;
+      }
+
+      try {
+        await undoPendingEdit(target.pendingEdit);
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === messageId && message.pendingEdit
+              ? {
+                  ...message,
+                  pendingEdit: { ...message.pendingEdit, status: "undone" },
+                  content: `${message.content}\n\nEdit undone.`,
+                }
+              : message,
+          ),
+        );
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "Failed to undo edit";
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === messageId ? { ...message, error: errorMessage } : message,
+          ),
+        );
+      }
+    },
+    [messages],
+  );
 
   const clearMessages = useCallback(() => {
     if (isStreaming) return;
@@ -227,6 +279,7 @@ export function useChat(contextMode: ContextMode) {
     sendMessage,
     applyEdit,
     rejectEdit,
+    undoEdit,
     clearMessages,
   };
 }

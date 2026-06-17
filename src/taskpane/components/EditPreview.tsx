@@ -6,10 +6,18 @@ interface EditPreviewProps {
   disabled?: boolean;
   onApply: () => void;
   onReject: () => void;
+  onUndo?: () => void;
 }
 
-export function EditPreview({ edit, disabled, onApply, onReject }: EditPreviewProps) {
+export function EditPreview({
+  edit,
+  disabled,
+  onApply,
+  onReject,
+  onUndo,
+}: EditPreviewProps) {
   const isPending = edit.status === "pending";
+  const canUndo = edit.status === "applied" && Boolean(edit.undo);
 
   return (
     <div className="edit-preview">
@@ -40,9 +48,20 @@ export function EditPreview({ edit, disabled, onApply, onReject }: EditPreviewPr
           </Button>
         </div>
       ) : (
-        <Text size={200}>
-          {edit.status === "applied" ? "Edit applied." : "Edit rejected."}
-        </Text>
+        <div className="edit-preview-actions">
+          <Text size={200}>
+            {edit.status === "applied"
+              ? "Edit applied."
+              : edit.status === "undone"
+                ? "Edit undone."
+                : "Edit rejected."}
+          </Text>
+          {canUndo ? (
+            <Button appearance="subtle" disabled={disabled} onClick={onUndo}>
+              Undo
+            </Button>
+          ) : null}
+        </div>
       )}
     </div>
   );

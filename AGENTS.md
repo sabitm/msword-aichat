@@ -10,13 +10,13 @@ Build a **Microsoft Word task-pane add-in** that provides:
 2. **Agentic editing** via tool calls against Office.js
 3. **Bring-your-own-model** via OpenAI- or Anthropic-compatible HTTP APIs
 
-Phase 2 delivers the agent loop, document tools, and edit preview. Phase 3 adds advanced editing.
+Phase 3 delivers advanced tools, bookmark-stable apply, and undo. Phase 4 focuses on polish and distribution.
 
 **Minimum supported host:** Word 2016+ or Microsoft 365 Word (not Office 2013).
 
 ---
 
-## Current state (Phase 2 — complete)
+## Current state (Phase 3 — complete)
 
 | Area | Implemented | Location |
 |------|-------------|----------|
@@ -28,9 +28,11 @@ Phase 2 delivers the agent loop, document tools, and edit preview. Phase 3 adds 
 | Anthropic-compatible adapter + tools | Yes | `src/llm/anthropic-compatible.ts` |
 | Chat mode (streaming) | Yes | `src/hooks/useChat.ts` |
 | Agent mode (tool loop) | Yes | `src/agent/orchestrator.ts` |
-| Document tools | Yes | `src/agent/tools/registry.ts` |
+| Document tools (9 total) | Yes | `src/agent/tools/registry.ts` |
 | Word operations | Yes | `src/word/operations.ts` |
-| Edit preview UI | Yes | `EditPreview.tsx` |
+| Range bookmarks (stable apply) | Yes | `src/word/ranges.ts` |
+| Undo snapshots | Yes | `src/word/undo.ts` |
+| Edit preview + Undo UI | Yes | `EditPreview.tsx` |
 | Agent step trace | Yes | `AgentTrace.tsx` |
 | Word context (selection, outline) | Yes | `src/word/context.ts` |
 
@@ -58,7 +60,9 @@ src/
 │   └── useDocumentContext.ts
 ├── word/
 │   ├── context.ts            # Selection, outline, chunking
-│   └── operations.ts         # read/insert/replace Office.js helpers
+│   ├── operations.ts         # search, styles, format, table
+│   ├── ranges.ts             # Bookmark capture for stable apply
+│   └── undo.ts               # Revert applied edits
 ├── types/
 │   ├── llm.ts
 │   ├── context.ts
@@ -164,13 +168,15 @@ Delivered: `src/word/context.ts`, context mode bar, token estimate, quick action
 
 Delivered: `runAgent`, four document tools, `complete()` on both providers, `EditPreview`, `AgentTrace`, Chat/Agent mode toggle, `autoApplyEdits` preference.
 
-**Known limitation:** `replace_text` Apply uses the current selection at apply-time; user should keep selection stable.
+### Phase 3 — Editing depth (complete)
 
-### Phase 3 — Editing depth (next)
+Delivered: `search_document`, `delete_range`, `apply_style`, `format_range`, `insert_table`, bookmark-stable apply, undo button, co-authoring-friendly errors.
 
-Styles, formatting, tables, search, undo snapshots, co-authoring error handling.
+**Known limitations:**
+- Bookmark deletion is not exposed by Word JS API; `msword_aichat_*` bookmarks may remain.
+- `insert_table` undo deletes the last document table (best-effort).
 
-### Phase 4 — Ship
+### Phase 4 — Polish & ship (next)
 
 Onboarding, Word on the web QA, optional `/models` fetch, distribution package.
 

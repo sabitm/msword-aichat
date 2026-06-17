@@ -4,14 +4,14 @@ A Microsoft Word task-pane add-in that brings AI chat and agentic document editi
 
 ## Status
 
-**Phase 2 complete.** Agent mode runs a tool loop against the document with edit preview and approval.
+**Phase 3 complete.** Advanced agent tools, bookmark-based stable apply, and undo for applied edits.
 
 | Phase | Scope | Status |
 |-------|-------|--------|
 | 0 | Scaffold, settings, streaming chat | Done |
 | 1 | Document context (selection, outline), quick actions | Done |
 | 2 | Agent loop + document edit tools | Done |
-| 3 | Advanced editing (styles, tables, undo) | Planned |
+| 3 | Advanced editing (styles, tables, undo) | Done |
 | 4 | Polish, Word on the web, distribution | Planned |
 
 ## Features (today)
@@ -21,8 +21,10 @@ A Microsoft Word task-pane add-in that brings AI chat and agentic document editi
 - Connection test against your configured endpoint
 - **Chat mode** — streaming responses with optional document context
 - **Agent mode** — multi-step tool loop with document read/write tools
-- **Document tools:** `get_selection`, `get_document_text`, `insert_text`, `replace_text`
+- **Document tools:** `get_selection`, `get_document_text`, `search_document`, `insert_text`, `replace_text`, `delete_range`, `apply_style`, `format_range`, `insert_table`
+- **Stable apply** — mutations capture a bookmarked range so Apply works after selection changes
 - **Edit preview** — before/after diff with **Apply** / **Reject** (default)
+- **Undo** — revert the last applied edit from the preview panel
 - Optional **auto-apply edits** in Settings
 - Agent step trace (collapsible) per assistant message
 - Document context modes: Selection, Outline, or None
@@ -93,9 +95,14 @@ The agent can call tools to read and edit the document:
 | `get_selection` | Read the current selection |
 | `get_document_text` | Read a chunk of body text (`start`, `max_chars`) |
 | `insert_text` | Insert text at selection or end of document |
-| `replace_text` | Replace the current selection |
+| `replace_text` | Replace the current selection (bookmark-captured range) |
+| `delete_range` | Delete the current selection |
+| `search_document` | Find text occurrences with positions |
+| `apply_style` | Apply Normal, Heading1–3, Title, or Subtitle |
+| `format_range` | Bold, italic, or font size on selection |
+| `insert_table` | Insert a table (up to 20×10) after selection |
 
-**Edit flow (default):** mutation tools stage a before/after preview. Click **Apply** to write to Word or **Reject** to discard.
+**Edit flow (default):** mutation tools stage a before/after preview. Click **Apply** to write to Word, **Reject** to discard, or **Undo** after applying.
 
 Enable **Auto-apply document edits** in Settings to skip the preview.
 
@@ -182,7 +189,8 @@ Word (Office.js)  ←→  Task Pane UI (React)
 - Document context and tool reads are sent to your configured LLM endpoint
 - Edits are staged for approval by default; only **Apply** writes to the document
 - Context is truncated at ~12,000 characters to limit prompt size
-- Keep selection stable before clicking **Apply** on a `replace_text` edit
+- Edits use internal bookmarks (`msword_aichat_*`) for stable apply; orphan bookmarks may remain in the document
+- **Undo** for `insert_table` removes the last table in the document (best-effort)
 - Custom endpoints must be reachable from the add-in runtime (watch CORS if not using a same-origin proxy)
 - Use HTTPS endpoints in production; the dev server uses a self-signed certificate
 
@@ -190,7 +198,7 @@ Word (Office.js)  ←→  Task Pane UI (React)
 
 See [AGENTS.md](./AGENTS.md) for the full phased plan and implementation guide for contributors and coding agents.
 
-**Next up (Phase 3):** styles, formatting, tables, search, and undo snapshots.
+**Next up (Phase 4):** onboarding, Word on the web QA, production manifest, and distribution.
 
 ## Troubleshooting
 

@@ -18,6 +18,7 @@ interface ChatPanelProps {
   onSend: (message: string) => void;
   onApplyEdit: (messageId: string) => void;
   onRejectEdit: (messageId: string) => void;
+  onUndoEdit: (messageId: string) => void;
 }
 
 export function ChatPanel({
@@ -28,6 +29,7 @@ export function ChatPanel({
   onSend,
   onApplyEdit,
   onRejectEdit,
+  onUndoEdit,
 }: ChatPanelProps) {
   const isConfigured = useSettingsStore((s) => s.isConfigured);
   const { context, isLoading, refresh } = useDocumentContext(contextMode);
@@ -85,6 +87,7 @@ export function ChatPanel({
           isStreaming={isStreaming}
           onApplyEdit={onApplyEdit}
           onRejectEdit={onRejectEdit}
+          onUndoEdit={onUndoEdit}
         />
       </div>
       <MessageInput
