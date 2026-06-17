@@ -7,16 +7,16 @@ This file helps humans and AI agents work effectively in the **msword-aichat** c
 Build a **Microsoft Word task-pane add-in** that provides:
 
 1. **Contextual AI chat** about the open document
-2. **Agentic editing** via tool calls against Office.js (planned)
+2. **Agentic editing** via tool calls against Office.js
 3. **Bring-your-own-model** via OpenAI- or Anthropic-compatible HTTP APIs
 
-The agent loop and document edit tools are **not implemented yet**. Phase 1 delivers document context in chat prompts; Phase 2 adds the tool loop.
+Phase 2 delivers the agent loop, document tools, and edit preview. Phase 3 adds advanced editing.
 
 **Minimum supported host:** Word 2016+ or Microsoft 365 Word (not Office 2013).
 
 ---
 
-## Current state (Phase 1 — complete)
+## Current state (Phase 2 — complete)
 
 | Area | Implemented | Location |
 |------|-------------|----------|
@@ -24,13 +24,15 @@ The agent loop and document edit tools are **not implemented yet**. Phase 1 deli
 | Vite + React + TypeScript shell | Yes | `taskpane.html`, `src/taskpane/` |
 | Provider settings UI | Yes | `src/taskpane/components/SettingsPanel.tsx` |
 | Settings persistence | Yes | `src/settings/store.ts` |
-| OpenAI-compatible adapter | Yes | `src/llm/openai-compatible.ts` |
-| Anthropic-compatible adapter | Yes | `src/llm/anthropic-compatible.ts` |
-| Streaming chat | Yes | `src/hooks/useChat.ts` |
+| OpenAI-compatible adapter + tools | Yes | `src/llm/openai-compatible.ts` |
+| Anthropic-compatible adapter + tools | Yes | `src/llm/anthropic-compatible.ts` |
+| Chat mode (streaming) | Yes | `src/hooks/useChat.ts` |
+| Agent mode (tool loop) | Yes | `src/agent/orchestrator.ts` |
+| Document tools | Yes | `src/agent/tools/registry.ts` |
+| Word operations | Yes | `src/word/operations.ts` |
+| Edit preview UI | Yes | `EditPreview.tsx` |
+| Agent step trace | Yes | `AgentTrace.tsx` |
 | Word context (selection, outline) | Yes | `src/word/context.ts` |
-| Context mode UI + quick actions | Yes | `ContextBar.tsx`, `QuickActions.tsx` |
-| Agent orchestrator | No | `src/agent/` (Phase 2) |
-| Document edit tools | No | `src/agent/tools/` (Phase 2) |
 
 ---
 
@@ -38,49 +40,36 @@ The agent loop and document edit tools are **not implemented yet**. Phase 1 deli
 
 ```
 src/
+├── agent/
+│   ├── orchestrator.ts       # Tool-call loop (MAX_AGENT_STEPS=10)
+│   ├── system-prompt.ts
+│   └── tools/
+│       └── registry.ts       # Tool defs, executeTool, applyPendingEdit
 ├── llm/
-│   ├── provider.ts           # LLMProvider interface, normalizeBaseUrl
-│   ├── openai-compatible.ts  # POST {baseUrl}/chat/completions
-│   ├── anthropic-compatible.ts # POST {baseUrl}/messages
-│   └── factory.ts            # createProvider(config)
+│   ├── provider.ts           # LLMProvider: chat(), complete(), ping()
+│   ├── openai-compatible.ts
+│   ├── anthropic-compatible.ts
+│   └── factory.ts
 ├── settings/
-│   ├── defaults.ts           # DEFAULT_PROVIDER_CONFIG, storage keys
-│   └── store.ts              # Zustand: load/save/getConfig
+│   ├── defaults.ts           # Provider config + AppPreferences
+│   └── store.ts
 ├── hooks/
-│   ├── useChat.ts            # Streaming chat with document context injection
-│   └── useDocumentContext.ts # Context preview + refresh
+│   ├── useChat.ts            # Chat + agent modes, apply/reject edits
+│   └── useDocumentContext.ts
 ├── word/
-│   └── context.ts            # getSelectionText, getDocumentOutline, estimateTokens
+│   ├── context.ts            # Selection, outline, chunking
+│   └── operations.ts         # read/insert/replace Office.js helpers
 ├── types/
-│   ├── llm.ts                # ProviderConfig, ChatMessage, ChatEvent, PingResult
-│   └── context.ts            # ContextMode, DocumentContext
+│   ├── llm.ts
+│   ├── context.ts
+│   └── agent.ts
 └── taskpane/
-    ├── main.tsx              # Office.onReady → render App
-    ├── App.tsx               # View routing: chat | settings
-    ├── index.css             # Layout styles (prefer Fluent tokens in components)
     └── components/
-        ├── Header.tsx
-        ├── ChatPanel.tsx
-        ├── MessageList.tsx
-        ├── MessageInput.tsx
-        └── SettingsPanel.tsx
-```
-
-**Planned directories (do not invent unrelated structure):**
-
-```
-src/agent/
-├── orchestrator.ts       # Tool-call loop (Phase 2)
-├── system-prompt.ts
-└── tools/
-    ├── registry.ts
-    ├── get-selection.ts
-    ├── get-document-text.ts
-    └── replace-text.ts
-
-src/word/
-├── context.ts            # Selection, outline, chunking (Phase 1)
-└── operations.ts         # Low-level Office.js helpers
+        ├── ModeBar.tsx
+        ├── ContextBar.tsx
+        ├── AgentTrace.tsx
+        ├── EditPreview.tsx
+        └── ...
 ```
 
 ---
@@ -96,9 +85,9 @@ flowchart TB
 
     subgraph Addin["Task Pane (React)"]
         UI[Chat / Settings UI]
-        CTX[Context Builder - Phase 1]
-        AGT[Agent Orchestrator - Phase 2]
-        TOOLS[Document Tools - Phase 2]
+        CTX[Context Builder]
+        AGT[Agent Orchestrator]
+        TOOLS[Document Tools]
         PROV[LLM Provider Adapter]
         CFG[Settings Store]
     end
@@ -120,9 +109,9 @@ flowchart TB
     CFG --> PROV
 ```
 
-**Data flow today (Phase 0):** `MessageInput` → `useChat` → `createProvider` → SSE stream → `MessageList`.
+**Chat mode:** `MessageInput` → `useChat` → `createProvider().chat()` → SSE stream → `MessageList`.
 
-**Target flow (Phase 2+):** User message → context builder → agent orchestrator → LLM with tools → execute Office.js ops → stream result + show diff preview.
+**Agent mode:** `MessageInput` → `useChat` → `runAgent()` → `provider.complete()` with tools → `executeTool()` → optional `PendingEdit` → `EditPreview` → `applyPendingEdit()`.
 
 ---
 
@@ -169,25 +158,15 @@ flowchart TB
 
 ### Phase 1 — Document context (complete)
 
-Delivered: `src/word/context.ts`, context mode bar, token estimate, quick actions, context injected into `useChat` system prompt.
+Delivered: `src/word/context.ts`, context mode bar, token estimate, quick actions.
 
-### Phase 2 — Agent MVP (next)
+### Phase 2 — Agent MVP (complete)
 
-**Goal:** Multi-step tool loop with safe apply flow.
+Delivered: `runAgent`, four document tools, `complete()` on both providers, `EditPreview`, `AgentTrace`, Chat/Agent mode toggle, `autoApplyEdits` preference.
 
-Tasks:
+**Known limitation:** `replace_text` Apply uses the current selection at apply-time; user should keep selection stable.
 
-1. Create `src/agent/orchestrator.ts` — loop with `MAX_AGENT_STEPS` (e.g. 10)
-2. Extend `ChatEvent` for `tool_call_start`, `tool_call_delta`, `tool_result`
-3. Extend both LLM adapters to send/receive tool schemas
-4. Implement tools in `src/agent/tools/`:
-   - `get_selection`, `get_document_text` (chunked), `insert_text`, `replace_text`
-5. UI: agent step trace, diff preview, Apply / Reject
-6. Default: **ask before apply**
-
-**Exit criteria:** "Rewrite this paragraph formally" executes `replace_text` after user confirms preview.
-
-### Phase 3 — Editing depth
+### Phase 3 — Editing depth (next)
 
 Styles, formatting, tables, search, undo snapshots, co-authoring error handling.
 

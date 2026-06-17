@@ -1,16 +1,16 @@
 # Word AI Chat
 
-A Microsoft Word task-pane add-in that brings AI chat — and eventually agentic document editing — to Word. Connect any **OpenAI-compatible** or **Anthropic-compatible** endpoint (OpenAI, Anthropic, LiteLLM, vLLM, Ollama gateways, private proxies, etc.).
+A Microsoft Word task-pane add-in that brings AI chat and agentic document editing to Word. Connect any **OpenAI-compatible** or **Anthropic-compatible** endpoint (OpenAI, Anthropic, LiteLLM, vLLM, Ollama gateways, private proxies, etc.).
 
 ## Status
 
-**Phase 1 complete.** The add-in reads Word selection and document outline, attaches context to chat prompts, and offers quick actions.
+**Phase 2 complete.** Agent mode runs a tool loop against the document with edit preview and approval.
 
 | Phase | Scope | Status |
 |-------|-------|--------|
 | 0 | Scaffold, settings, streaming chat | Done |
 | 1 | Document context (selection, outline), quick actions | Done |
-| 2 | Agent loop + document edit tools | Planned |
+| 2 | Agent loop + document edit tools | Done |
 | 3 | Advanced editing (styles, tables, undo) | Planned |
 | 4 | Polish, Word on the web, distribution | Planned |
 
@@ -19,9 +19,13 @@ A Microsoft Word task-pane add-in that brings AI chat — and eventually agentic
 - Task-pane UI on the Word **Home** tab (**AI Chat** button)
 - Provider settings: type, base URL, API key, model, temperature, max tokens
 - Connection test against your configured endpoint
-- Streaming chat with conversation history (in-memory per session)
-- **Document context modes:** Selection, Outline, or None
-- Context token estimate and refresh
+- **Chat mode** — streaming responses with optional document context
+- **Agent mode** — multi-step tool loop with document read/write tools
+- **Document tools:** `get_selection`, `get_document_text`, `insert_text`, `replace_text`
+- **Edit preview** — before/after diff with **Apply** / **Reject** (default)
+- Optional **auto-apply edits** in Settings
+- Agent step trace (collapsible) per assistant message
+- Document context modes: Selection, Outline, or None
 - Quick actions: **Summarize**, **Improve**, **Explain**
 - API keys stored locally on the device (separate from other settings)
 
@@ -74,17 +78,40 @@ npm stop
 
 Open [https://localhost:3000/taskpane.html](https://localhost:3000/taskpane.html) in a browser. Chat and settings work, but Word document context APIs are unavailable outside Word.
 
-## Using document context
+## Using chat and agent modes
 
-1. Open **AI Chat** in Word
-2. Choose a **Context** mode:
-   - **Selection** — sends the currently selected text with each message
-   - **Outline** — sends the document heading structure
-   - **None** — chat without document context
-3. Click **Refresh** to re-read the document before sending
-4. Use **Quick actions** (Summarize / Improve / Explain) with Selection or Outline context
+### Chat mode
 
-Select text in your document, choose **Selection** context, then click **Summarize** to get a summary grounded in that text.
+Streaming Q&A with optional document context attached to the system prompt. No document tools are called.
+
+### Agent mode (default)
+
+The agent can call tools to read and edit the document:
+
+| Tool | Description |
+|------|-------------|
+| `get_selection` | Read the current selection |
+| `get_document_text` | Read a chunk of body text (`start`, `max_chars`) |
+| `insert_text` | Insert text at selection or end of document |
+| `replace_text` | Replace the current selection |
+
+**Edit flow (default):** mutation tools stage a before/after preview. Click **Apply** to write to Word or **Reject** to discard.
+
+Enable **Auto-apply document edits** in Settings to skip the preview.
+
+### Example: rewrite selected text
+
+1. Select a paragraph in Word
+2. Open **AI Chat** → mode **Agent**
+3. Send: `Rewrite this in a formal tone`
+4. Review the agent steps and edit preview
+5. Click **Apply**
+
+### Document context bar
+
+1. Choose **Context**: Selection, Outline, or None
+2. Click **Refresh** to re-read the document before sending
+3. Use **Quick actions** (Summarize / Improve / Explain) with Selection or Outline context
 
 ## Configuration
 
@@ -126,8 +153,9 @@ msword-aichat/
 ├── commands.html             # Ribbon commands stub (required by manifest)
 ├── public/assets/            # Add-in icons
 └── src/
+    ├── agent/                # Orchestrator, tools, system prompt
     ├── llm/                  # OpenAI & Anthropic-compatible providers
-    ├── word/                 # Document context (selection, outline)
+    ├── word/                 # Document context + Office.js operations
     ├── settings/             # Zustand store + defaults
     ├── hooks/                # useChat, useDocumentContext
     ├── types/                # Shared TypeScript types
@@ -139,8 +167,8 @@ msword-aichat/
 ```
 Word (Office.js)  ←→  Task Pane UI (React)
          ↓                    ↓
-   Document context      useChat hook
-   (selection/outline)         ↓
+   Document tools        Agent orchestrator
+   + context                  ↓
                           LLM Provider  →  Your API endpoint
 ```
 
@@ -151,8 +179,10 @@ Word (Office.js)  ←→  Task Pane UI (React)
 ## Security notes
 
 - API keys are stored in `localStorage` on the local machine only
-- Document context (selection or outline) is sent to your configured LLM endpoint when context mode is not **None**
+- Document context and tool reads are sent to your configured LLM endpoint
+- Edits are staged for approval by default; only **Apply** writes to the document
 - Context is truncated at ~12,000 characters to limit prompt size
+- Keep selection stable before clicking **Apply** on a `replace_text` edit
 - Custom endpoints must be reachable from the add-in runtime (watch CORS if not using a same-origin proxy)
 - Use HTTPS endpoints in production; the dev server uses a self-signed certificate
 
@@ -160,7 +190,7 @@ Word (Office.js)  ←→  Task Pane UI (React)
 
 See [AGENTS.md](./AGENTS.md) for the full phased plan and implementation guide for contributors and coding agents.
 
-**Next up (Phase 2):** agent orchestrator with document edit tools, diff preview, and apply/reject flow.
+**Next up (Phase 3):** styles, formatting, tables, search, and undo snapshots.
 
 ## Troubleshooting
 
