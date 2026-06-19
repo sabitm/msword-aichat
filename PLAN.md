@@ -178,7 +178,7 @@ Chat mode uses SSE over `fetch` + `ReadableStream`. IE11 has **no** `ReadableStr
 | **IE-1** | Shell + settings | React 16, Fluent v8 theme, Header, Settings, store, certs | Save/load settings in Word 2016 |
 | **IE-2** | Chat MVP | Message list/input, context bar, XHR SSE, connection test | Chat streams (or pseudo-streams) in Word 2016 |
 | **IE-3** | Agent + edits | Mode bar, agent trace, edit preview, apply/reject/undo | Agent tool loop + preview works in Word 2016 |
-| **IE-4** | Feature parity | Onboarding, slash cmds, persistence, 10 tools UI, errors | Checklist matches current feature set |
+| **IE-4** | Feature parity | Slash hints, telemetry polish, docs — **no onboarding** | Checklist matches current feature set |
 | **IE-5** | Ship | Remove Vite path, update docs, 2016 QA matrix, package | `npm run smoke` + manual 2016 sign-off |
 
 ### IE-0 detail
@@ -198,7 +198,7 @@ Chat mode uses SSE over `fetch` + `ReadableStream`. IE11 has **no** `ReadableStr
 - [x] Replace Zustand with `settingsStore` pub/sub module (`store.legacy.ts`)
 - [x] Disable webpack HMR + error overlay (fixes red `InvalidArgument` dev overlay noise)
 - [ ] Verify in Word 2016: save/load settings, test connection, fetch models
-- [ ] Port onboarding can wait until IE-4 or minimal stub → settings
+- [x] No onboarding — direct Settings / Chat tabs (user preference; skip wizard)
 
 ### IE-2 detail
 
@@ -218,10 +218,12 @@ Chat mode uses SSE over `fetch` + `ReadableStream`. IE11 has **no** `ReadableStr
 
 ### IE-4 detail
 
-- [ ] `OnboardingWizard` (Fluent v8)
-- [ ] Slash command hints
-- [ ] Conversation persistence
-- [ ] Model list fetch, telemetry, proxy docs
+- [x] **Onboarding — skipped** (legacy opens Settings when unconfigured; Chat/Settings header only)
+- [x] Conversation persistence (IE-2)
+- [x] Model list fetch + Test connection (IE-1)
+- [ ] Slash command hints in `MessageInput` (`/fix`, `/table`, … autocomplete list)
+- [ ] Optional telemetry endpoint wiring QA
+- [ ] README: Word 2016 supported, CORS/proxy notes for local routers
 
 ### IE-5 detail
 
@@ -381,3 +383,4 @@ When approved, implementation order:
 | 2026-06-19 | IE-1 — Fluent v8 shell, settings panel, legacy store, WDS overlay off |
 | 2026-06-19 | IE-2 — Chat UI, XHR SSE streaming, document context, conversation persistence |
 | 2026-06-19 | IE-3 — Agent mode, agent trace, edit preview, apply/reject/undo |
+| 2026-06-19 | IE-4 plan revised — onboarding removed; direct Settings/Chat shell kept |
