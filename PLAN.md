@@ -2,7 +2,7 @@
 
 > **Tracking doc.** Grand plan to support Word 2016 desktop on Windows (IE11 task-pane WebView).  
 > **Last updated:** 2026-06-19  
-> **Status:** IE-4 implemented on branch `ie11-rewrite` — ready for Word 2016 sign-off before IE-5 ship
+> **Status:** IE-5 implemented on branch `ie11-rewrite` — automated smoke passes; awaiting manual Word 2016 matrix sign-off
 
 ---
 
@@ -227,10 +227,11 @@ Chat mode uses SSE over `fetch` + `ReadableStream`. IE11 has **no** `ReadableStr
 
 ### IE-5 detail
 
-- [ ] Delete Vite, React 19, Fluent v9 deps
-- [ ] Update `smoke-test.mjs` for webpack output
-- [ ] README: Word 2016 Windows = supported host
-- [ ] Manual QA matrix (below)
+- [x] Delete Vite, React 19, Fluent v9 deps and modern UI path
+- [x] Update `smoke-test.mjs` for webpack output (auto-starts dev server)
+- [x] Fix `package-addin.mjs` to copy `taskpane.*.bundle.js`
+- [x] README: Word 2016 Windows = primary supported host + QA matrix
+- [ ] Manual QA matrix sign-off (below) — user verification in Word 2016
 
 ---
 
@@ -364,14 +365,7 @@ Avoid maintaining two UIs permanently.
 
 ## 15. Next action
 
-Start **IE-0**: Webpack + Babel + polyfills + Hello World in Word 2016 task pane.
-
-When approved, implementation order:
-
-1. `webpack.config.js` + `babel.config.js`
-2. Polyfill entry + minimal React 16 mount
-3. Confirm Word 2016 shows UI
-4. Proceed to IE-1 settings shell
+**IE-5 complete** (automated). Run manual Word 2016 QA matrix (§10), then merge `ie11-rewrite` → `main` when all rows pass.
 
 ---
 
@@ -386,3 +380,4 @@ When approved, implementation order:
 | 2026-06-19 | IE-4 plan revised — onboarding removed; direct Settings/Chat shell kept |
 | 2026-06-19 | IE-4 plan revised — telemetry removed from legacy build |
 | 2026-06-19 | IE-4 — slash hints, README for Word 2016 + CORS (no onboarding/telemetry) |
+| 2026-06-20 | IE-5 — removed Vite/modern stack, webpack smoke + package bundle fix, README QA matrix |

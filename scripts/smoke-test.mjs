@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { execSync } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -50,6 +50,23 @@ function fetchText(url) {
   });
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForDevServer(maxAttempts = 30) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      const { status } = await fetchText(`${baseUrl}/taskpane.html`);
+      if (status === 200) return true;
+    } catch {
+      // retry
+    }
+    await sleep(1000);
+  }
+  return false;
+}
+
 function checkDistBundle() {
   const dist = join(root, "dist");
   if (!existsSync(dist)) {
@@ -63,26 +80,35 @@ function checkDistBundle() {
     else fail(`dist/${file}`);
   }
 
+  const distFiles = readdirSync(dist);
+  const bundle = distFiles.find((name) => name.endsWith(".bundle.js"));
+  if (bundle) {
+    const size = readFileSync(join(dist, bundle)).length;
+    pass("dist webpack bundle", `${bundle} (${Math.round(size / 1024)} KB)`);
+    if (size < 100_000) fail("dist bundle size", `${size} bytes — suspiciously small`);
+    else if (size > 3_000_000) fail("dist bundle size", `${size} bytes — exceeds 3 MB budget`);
+    else pass("dist bundle size within budget");
+  } else {
+    fail("dist webpack bundle");
+  }
+
   const assetsDir = join(dist, "assets");
   if (!existsSync(assetsDir)) {
     fail("dist/assets/");
     return;
   }
+  pass("dist/assets/");
 
   const assets = readdirSync(assetsDir);
-  const hasJs = assets.some((name) => name.endsWith(".js"));
-  const hasCss = assets.some((name) => name.endsWith(".css"));
-  const hasFluentChunk = assets.some((name) => name.includes("fluent"));
-  const hasReactChunk = assets.some((name) => name.includes("react"));
+  const iconCount = assets.filter((name) => name.endsWith(".png")).length;
+  if (iconCount >= 3) pass("dist icon assets", `${iconCount} PNG files`);
+  else fail("dist icon assets", `found ${iconCount}`);
 
-  if (hasJs) pass("dist JS bundle");
-  else fail("dist JS bundle");
-  if (hasCss) pass("dist CSS bundle");
-  else fail("dist CSS bundle");
-  if (hasFluentChunk) pass("fluent code-split chunk");
-  else fail("fluent code-split chunk");
-  if (hasReactChunk) pass("react code-split chunk");
-  else fail("react code-split chunk");
+  const taskpaneHtml = readFileSync(join(dist, "taskpane.html"), "utf8");
+  if (taskpaneHtml.includes(".bundle.js")) pass("taskpane.html references bundle");
+  else fail("taskpane.html references bundle");
+  if (!taskpaneHtml.includes('type="module"')) pass("taskpane.html no ESM module script");
+  else fail("taskpane.html no ESM module script");
 }
 
 function checkPackageOutput() {
@@ -104,6 +130,11 @@ function checkPackageOutput() {
     if (existsSync(join(packageDir, file))) pass(`package/${file}`);
     else fail(`package/${file}`);
   }
+
+  const packageFiles = readdirSync(packageDir);
+  const bundle = packageFiles.find((name) => name.endsWith(".bundle.js"));
+  if (bundle) pass("package webpack bundle", bundle);
+  else fail("package webpack bundle");
 }
 
 function checkToolRegistry() {
@@ -135,6 +166,19 @@ function checkSlashCommands() {
   }
 }
 
+function checkNoViteStack() {
+  const removed = [
+    "vite.config.ts",
+    "src/taskpane/main.tsx",
+    "src/taskpane/App.tsx",
+    "src/settings/store.ts",
+  ];
+  for (const file of removed) {
+    if (!existsSync(join(root, file))) pass(`removed: ${file}`);
+    else fail(`removed: ${file}`);
+  }
+}
+
 async function checkDevServer() {
   const endpoints = [
     "/taskpane.html",
@@ -153,10 +197,6 @@ async function checkDevServer() {
         fail(`GET ${path}`, "missing html root");
         continue;
       }
-      if (path.endsWith(".html") && path.includes("taskpane") && !body.includes("taskpane")) {
-        fail(`GET ${path}`, "missing taskpane entry script");
-        continue;
-      }
       pass(`GET ${path}`, `HTTP ${status}`);
     } catch (error) {
       fail(`GET ${path}`, error instanceof Error ? error.message : "request failed");
@@ -165,10 +205,15 @@ async function checkDevServer() {
 
   try {
     const { body } = await fetchText(`${baseUrl}/taskpane.html`);
-    const prodEntry = body.match(/src="(\/assets\/[^"]+\.js)"/);
-    const devEntry = body.match(/src="(\/src\/taskpane\/main\.tsx[^"]*)"/);
-    const entryPath = prodEntry?.[1] ?? devEntry?.[1];
+    const bundleEntry = body.match(/src="(\/taskpane[^"]*\.bundle\.js)"/);
+    const legacyViteEntry = body.match(/src="(\/src\/taskpane\/main\.tsx[^"]*)"/);
 
+    if (legacyViteEntry) {
+      fail("taskpane entry script reference", "still using Vite ESM entry");
+      return;
+    }
+
+    const entryPath = bundleEntry?.[1];
     if (!entryPath) {
       fail("taskpane entry script reference");
       return;
@@ -176,17 +221,14 @@ async function checkDevServer() {
 
     pass("taskpane entry script reference", entryPath);
 
-    const entryUrl = entryPath.split("?")[0];
     const { status, body: js } = await fetchText(`${baseUrl}${entryPath}`);
-    const isDevEntry = entryUrl.includes("/src/");
-    const minSize = isDevEntry ? 500 : 10_000;
-    if (status === 200 && js.length >= minSize) {
-      pass("taskpane entry served", `${isDevEntry ? "dev" : "prod"} HTTP ${status}`);
+    if (status === 200 && js.length >= 100_000) {
+      pass("taskpane bundle served", `HTTP ${status}, ${Math.round(js.length / 1024)} KB`);
     } else {
-      fail("taskpane entry served", `HTTP ${status}, ${js.length} bytes`);
+      fail("taskpane bundle served", `HTTP ${status}, ${js.length} bytes`);
     }
   } catch (error) {
-    fail("taskpane entry served", error instanceof Error ? error.message : "request failed");
+    fail("taskpane bundle served", error instanceof Error ? error.message : "request failed");
   }
 }
 
@@ -219,12 +261,45 @@ checkPackageOutput();
 console.log("\nSource contracts");
 checkToolRegistry();
 checkSlashCommands();
+checkNoViteStack();
 
 console.log("\nDev server (" + baseUrl + ")");
-await checkDevServer();
+let devProcess = null;
+const skipDevServer = process.env.SMOKE_SKIP_DEV_SERVER === "1";
+
+if (skipDevServer) {
+  console.log("  (skipped — SMOKE_SKIP_DEV_SERVER=1)");
+} else {
+  devProcess = spawn("npm", ["run", "dev"], {
+    cwd: root,
+    stdio: "ignore",
+    shell: true,
+    detached: process.platform !== "win32",
+  });
+
+  const ready = await waitForDevServer();
+  if (!ready) {
+    fail("dev server ready");
+  } else {
+    pass("dev server ready");
+    await checkDevServer();
+  }
+}
 
 console.log("\nProxy");
 checkProxy();
+
+if (devProcess?.pid) {
+  try {
+    if (process.platform === "win32") {
+      execSync(`taskkill /PID ${devProcess.pid} /T /F`, { stdio: "ignore" });
+    } else {
+      process.kill(-devProcess.pid);
+    }
+  } catch {
+    // best-effort cleanup
+  }
+}
 
 const failed = results.filter((result) => !result.ok);
 const passed = results.filter((result) => result.ok);
@@ -241,8 +316,9 @@ if (failed.length) {
   process.exit(1);
 }
 
-console.log("\nManual Word host checks (not run in CI/Linux):");
-console.log("  - Word Desktop: npm start → Home → AI Chat → onboarding → chat/agent");
-console.log("  - Word on the web: upload package/ manifest → run QA matrix in README");
-console.log("  - Agent tools: get_selection, replace_text Apply/Undo, insert_comment");
+console.log("\nManual Word 2016 checks (not run in automation):");
+console.log("  - npm start → Home → AI Chat → pane loads (not blank)");
+console.log("  - Settings save, test connection, fetch models");
+console.log("  - Chat stream, agent replace_text Apply/Undo, slash /fix");
+console.log("  - See README Word 2016 QA matrix for full sign-off");
 console.log("\nAll automated smoke checks passed.\n");

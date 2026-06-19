@@ -2,6 +2,8 @@
 
 A Microsoft Word task-pane add-in that brings AI chat and agentic document editing to Word. Connect any **OpenAI-compatible** or **Anthropic-compatible** endpoint (OpenAI, Anthropic, LiteLLM, vLLM, Ollama gateways, private proxies, etc.).
 
+Built for **Word 2016 Windows** (IE11 task pane) and also runs on **Office 2019+**, **Microsoft 365**, and **Word on the web**.
+
 ## Features
 
 - Task-pane UI on the Word **Home** tab (**AI Chat** button)
@@ -24,31 +26,25 @@ A Microsoft Word task-pane add-in that brings AI chat and agentic document editi
 - API keys stored locally on the device (separate from other settings)
 - **Fetch models** — load model list from `/models` when your gateway supports it
 - **Error actions** — Retry failed messages or copy error details
+- **Slash command hints** — type `/` in the message box for autocomplete
 - **Production package** — `manifest.prod.xml` + `npm run package` for org catalog deployment
-- **Slash command hints** — type `/` in the message box for autocomplete (`/fix`, `/table`, …)
 
 ## System requirements
 
-| Platform | Minimum | Recommended |
-|----------|---------|-------------|
-| **Word on Windows** | **Office 2016+** on `ie11-rewrite` branch; **Office 2019+** / **M365** on `main` | **Microsoft 365** Word |
-| **Word on Mac** | Word **15.18**+ (2016-era) | **Microsoft 365** Word for Mac |
-| **Word on the web** | Modern browser (Edge, Chrome, Firefox, Safari) | Microsoft 365 account |
+| Platform | Minimum | Notes |
+|----------|---------|-------|
+| **Word 2016 Windows** | Office 2016 desktop | **Primary target** — IE11 task pane, ES5 Webpack bundle |
+| **Word 2019+ / M365 Windows** | WebView2 | Regression-tested; same ES5 bundle runs on modern WebView |
+| **Word on Mac** | Word 15.18+ | Best-effort |
+| **Word on the web** | Modern browser | Regression-tested |
 
-**Branches:** `main` targets **Office 2019+ / M365** (React 19 + Vite). **`ie11-rewrite`** targets **Word 2016 Windows** (IE11 task pane, Webpack + React 16 + ES5). Office 2013 and earlier are not supported.
+Office 2013 and earlier are not supported.
 
 **Development:** Node.js 20+
-
-## Prerequisites
-
-- **Node.js** 20+
-- **Word 2016+** on Windows (`ie11-rewrite`), or **Office 2019+** / **M365** (`main`), or **Word on the web**
-- An OpenAI- or Anthropic-compatible API endpoint and API key
 
 ## Quick start
 
 ```bash
-# Install dependencies
 npm install
 
 # Windows: trust localhost dev cert (once, elevated PowerShell)
@@ -58,25 +54,7 @@ npm run certs
 npm run dev
 ```
 
-The dev server runs at **https://localhost:3000**.
-
-### Word 2016 (IE11) — `ie11-rewrite` branch
-
-Office 2016 on Windows uses **IE11** for task panes. Check out **`ie11-rewrite`**:
-
-```bash
-git checkout ie11-rewrite
-npm install
-npm run certs    # once, elevated — trusted localhost HTTPS
-npm run dev      # Webpack dev server → https://localhost:3000
-npm start        # sideload in Word (close Word first)
-```
-
-- **Webpack** + **React 16** + **Fluent UI v8** + **ES5** bundle (no Vite ESM)
-- Direct **Settings** and **Chat** tabs — no onboarding wizard, no telemetry
-- Chat streaming (XHR SSE), agent mode, edit preview, slash commands, per-document persistence
-
-Legacy UI lives under `src/taskpane/components.legacy/`; `src/taskpane/components/` is the modern reference on `main`.
+The dev server runs at **https://localhost:3000** (Webpack + React 16 + Fluent UI v8 + ES5).
 
 ### Sideload in Word (Desktop)
 
@@ -160,18 +138,17 @@ Open **Settings** from the task-pane header (the add-in opens Settings automatic
 
 | Command | Description |
 |---------|-------------|
-| `npm run dev` | Start dev server on port 3000 (HTTPS) — Webpack on `ie11-rewrite`, Vite on `main` |
+| `npm run dev` | Webpack dev server on port 3000 (HTTPS) |
 | `npm start` | Sideload add-in in Word + start dev server |
 | `npm stop` | Unregister sideloaded add-in |
-| `npm run build` | Typecheck and build production bundle to `dist/` |
-| `npm run preview` | Preview production build |
-| `npm run typecheck` | Run TypeScript without emitting |
+| `npm run build` | Production ES5 bundle → `dist/` |
+| `npm run typecheck` | TypeScript check (no emit) |
 | `npm run validate` | Validate `manifest.xml` |
 | `npm run validate:prod` | Validate `manifest.prod.xml` template |
 | `npm run package` | Build and assemble `package/` for deployment |
 | `npm run package -- https://host/path` | Package with production manifest URLs filled in |
 | `npm run proxy` | Start local CORS proxy on port 8787 (see below) |
-| `npm run smoke` | Run automated smoke test (build, validate, dev server, contracts) |
+| `npm run smoke` | Automated smoke test (build, validate, package, dev server) |
 | `npm run certs` | Install trusted localhost dev certs (Windows — run terminal as Administrator) |
 | `npm run certs:verify` | Verify dev certificates are installed |
 
@@ -179,32 +156,38 @@ Open **Settings** from the task-pane header (the add-in opens Settings automatic
 
 ```
 msword-aichat/
-├── manifest.xml              # Word add-in manifest (sideload / store)
-├── taskpane.html             # Task pane entry HTML
+├── manifest.xml              # Word add-in manifest (sideload / dev)
+├── manifest.prod.xml         # Production manifest template
+├── taskpane.template.html    # Webpack HTML template
+├── webpack.config.cjs        # ES5 build (IE11)
 ├── commands.html             # Ribbon commands stub (required by manifest)
 ├── public/assets/            # Add-in icons
 └── src/
     ├── agent/                # Orchestrator, tools, system prompt
-    ├── llm/                  # OpenAI & Anthropic-compatible providers
+    ├── llm/                  # OpenAI & Anthropic-compatible providers + XHR SSE
     ├── word/                 # Document context + Office.js operations
-    ├── settings/             # Zustand store + defaults
-    ├── hooks/                # useChat, useDocumentContext
+    ├── settings/             # defaults + legacy pub/sub store
+    ├── hooks/                # useChat.legacy, useDocumentContext.legacy
     ├── types/                # Shared TypeScript types
-    └── taskpane/             # React UI (App, Chat, Settings)
+    └── taskpane/
+        ├── App.legacy.tsx
+        ├── main.legacy.tsx
+        └── components.legacy/  # Fluent UI v8 task-pane UI
 ```
 
 ## Architecture (high level)
 
 ```
-Word (Office.js)  ←→  Task Pane UI (React)
+Word (Office.js)  ←→  Task Pane UI (React 16 + Fluent v8)
          ↓                    ↓
    Document tools        Agent orchestrator
    + context                  ↓
                           LLM Provider  →  Your API endpoint
 ```
 
-- **UI:** React 19, Fluent UI v9, Zustand for settings
-- **Build:** Vite 7 with HTTPS on port 3000 (`office-addin-dev-certs` on Windows/Mac)
+- **UI:** React 16.14, Fluent UI v8, custom pub/sub settings store
+- **Build:** Webpack 5, Babel ES5 (`targets: { ie: 11 }`), single `taskpane.*.bundle.js`
+- **Streaming:** XHR-based SSE reader for IE11 chat mode
 - **LLM:** Thin `fetch` + SSE adapters; no SDK dependency
 
 ## Security notes
@@ -226,7 +209,7 @@ Build and create a deployable folder:
 npm run package -- https://addins.yourcompany.com/msword-aichat
 ```
 
-Upload the contents of `package/` to your HTTPS origin. Use `manifest.xml` from that folder for sideloading or Microsoft 365 admin center deployment.
+Upload the contents of `package/` to your HTTPS origin (bundle `.js` must sit next to `taskpane.html`). Use `manifest.xml` from that folder for sideloading or Microsoft 365 admin center deployment.
 
 For local development, keep using root `manifest.xml` (localhost URLs).
 
@@ -254,9 +237,28 @@ npm run proxy
 
 Then set **Base URL** to `http://localhost:8787/v1` in Settings. The proxy answers `OPTIONS` and forwards traffic. Development only — production should allow the add-in origin or use an org-managed proxy.
 
+## Word 2016 Windows QA matrix (P0 sign-off)
+
+Manual smoke test on **Word 2016 desktop** before org-wide rollout:
+
+| # | Test | Pass |
+|---|------|------|
+| 1 | Task pane loads UI (not blank) | |
+| 2 | Settings save + reload | |
+| 3 | Test connection | |
+| 4 | Chat stream (XHR SSE) | |
+| 5 | Selection context + refresh | |
+| 6 | Agent `get_selection` | |
+| 7 | `replace_text` preview → Apply → Undo | |
+| 8 | `insert_comment` | |
+| 9 | `insert_table` | |
+| 10 | Slash `/fix` | |
+| 11 | Conversation persists per document | |
+| 12 | Retry / copy on error | |
+
 ## Word on the web QA checklist
 
-Manual smoke test in Word on the web before org-wide rollout:
+Regression test in Word on the web after Word 2016 sign-off:
 
 | Area | Test |
 |------|------|
@@ -274,29 +276,29 @@ Manual smoke test in Word on the web before org-wide rollout:
 
 **Blank white task pane (no UI)**
 
-- **Word 2016 Windows:** use branch **`ie11-rewrite`** (Webpack ES5 bundle). `main` uses Vite + React 19, which IE11 cannot run.
-- **Office 2019+ / M365:** confirm [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/) is installed.
+- Confirm you are on the `ie11-rewrite` branch with Webpack dev server running (`npm run dev`).
 - Restart `npm run dev` after `npm run certs`; close Word before `npm start`.
+- On Office 2019+ / M365, confirm [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/) is installed if the pane is blank on modern Word.
 
 **Red “Uncaught runtime errors” overlay (dev only)**
 
-Webpack dev-server HMR can trigger this on IE11. `ie11-rewrite` disables the overlay — restart `npm run dev` if you still see it.
+Webpack dev-server HMR can trigger this on IE11. HMR and the error overlay are disabled — restart `npm run dev` if you still see it.
 
 **Fluent dropdown shows white screen (IE11)**
 
-Use native `<select>` controls in the legacy UI (`IeSelect`). Avoid Fluent `Dropdown` / `CommandBar` overflow menus in the task pane on Word 2016.
+The legacy UI uses native `<select>` controls (`IeSelect`). Avoid Fluent `Dropdown` / `CommandBar` overflow menus in the task pane on Word 2016.
 
 **Certificate error / "content is blocked" (Word task pane)**
 
-Word uses its own embedded browser and does **not** trust Vite's default self-signed certificate. Install Microsoft's dev certs once:
+Word uses its own embedded browser and does **not** trust self-signed certificates by default. Install Microsoft's dev certs once:
 
 1. Open **PowerShell or Command Prompt as Administrator**
 2. In the project folder: `npm install` then `npm run certs`
 3. Stop and restart `npm run dev`
 4. Close Word completely, then run `npm start` again
-5. Open `https://localhost:3000/taskpane.html` in **Edge** (or IE on older setups) and confirm it loads without a cert warning
+5. Open `https://localhost:3000/taskpane.html` in **Edge** and confirm it loads without a cert warning
 
-`npm run certs:verify` should report the certificate is valid. The dev server prefers `office-addin-dev-certs` over the basic-ssl fallback.
+`npm run certs:verify` should report the certificate is valid.
 
 **Add-in does not load**
 

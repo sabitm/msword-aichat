@@ -1,22 +1,31 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
-    "useDefineForClassFields": true,
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "target": "ES5",
+    "lib": ["ES5", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "skipLibCheck": true,
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "isolatedModules": true,
-    "moduleDetection": "force",
-    "noEmit": true,
-    "jsx": "react-jsx",
+    "moduleResolution": "node",
+    "jsx": "react",
     "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true,
-    "types": ["office-js"]
+    "noEmit": true,
+    "types": ["office-js", "node"]
   },
-  "include": ["src"]
+  "include": [
+    "src/polyfills.ts",
+    "src/settings/store.legacy.ts",
+    "src/settings/defaults.ts",
+    "src/hooks/useSettingsStore.legacy.ts",
+    "src/hooks/useChat.legacy.ts",
+    "src/hooks/useDocumentContext.legacy.ts",
+    "src/hooks/useDocumentKey.legacy.ts",
+    "src/conversation/store.legacy.ts",
+    "src/word/document-key.legacy.ts",
+    "src/word/**/*.ts",
+    "src/llm/**/*.ts",
+    "src/types/**/*.ts",
+    "src/agent/**/*.ts",
+    "src/taskpane/main.legacy.tsx",
+    "src/taskpane/App.legacy.tsx",
+    "src/taskpane/components.legacy/**/*.tsx"
+  ]
 }

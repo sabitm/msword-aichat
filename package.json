@@ -8,7 +8,7 @@
     "certs:verify": "office-addin-dev-certs verify",
     "dev": "webpack serve --config webpack.config.cjs",
     "build": "webpack --config webpack.config.cjs --mode production",
-    "typecheck": "tsc -p tsconfig.legacy.json --noEmit",
+    "typecheck": "tsc --noEmit",
     "start": "office-addin-debugging start manifest.xml",
     "stop": "office-addin-debugging stop manifest.xml",
     "validate": "office-addin-manifest validate manifest.xml",

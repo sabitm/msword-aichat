@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -14,6 +14,20 @@ if (!existsSync(distDir)) {
 }
 
 mkdirSync(packageDir, { recursive: true });
+
+const distEntries = readdirSync(distDir);
+const bundleFiles = distEntries.filter(
+  (name) => name.endsWith(".bundle.js") || name.endsWith(".bundle.js.LICENSE.txt"),
+);
+
+if (!bundleFiles.length) {
+  console.error("No webpack bundle found in dist/. Run npm run build first.");
+  process.exit(1);
+}
+
+for (const file of bundleFiles) {
+  cpSync(join(distDir, file), join(packageDir, file));
+}
 
 for (const entry of ["assets", "taskpane.html", "commands.html"]) {
   const source = join(distDir, entry);
@@ -39,12 +53,13 @@ writeFileSync(join(packageDir, "manifest.xml"), manifest);
 const readme = `Word AI Chat — distribution package
 
 Contents:
-- manifest.xml  (production manifest)
+- manifest.xml       (production manifest)
 - taskpane.html, commands.html
-- assets/         (icons and bundled JS/CSS)
+- taskpane.*.bundle.js  (ES5 application bundle)
+- assets/            (icons)
 
 Deploy:
-1. Upload all files in this folder to your HTTPS origin.
+1. Upload all files in this folder to your HTTPS origin (keep bundle .js next to taskpane.html).
 2. Ensure CORS allows the add-in origin if calling remote LLM gateways.
 3. Sideload manifest.xml for testing, or publish via Microsoft 365 admin center / AppSource.
 
