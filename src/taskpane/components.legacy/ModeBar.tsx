@@ -32,7 +32,7 @@ export function ModeBar(): React.ReactElement {
       />
       <Text variant="small" block className="mode-hint">
         {preferences.interactionMode === "agent"
-          ? "Agent tools arrive in IE-3. Use Chat mode to stream responses now."
+          ? "Agent can call document tools. Edits require approval unless auto-apply is enabled."
           : "Chat streams responses without document tools."}
       </Text>
     </div>

@@ -18,6 +18,9 @@ interface ChatPanelProps {
   contextMode: ContextMode;
   onContextModeChange: (mode: ContextMode) => void;
   onSend: (message: string) => void;
+  onApplyEdit: (messageId: string) => void;
+  onRejectEdit: (messageId: string) => void;
+  onUndoEdit: (messageId: string) => void;
   onRetry?: (messageId: string) => void;
 }
 
@@ -93,6 +96,9 @@ export function ChatPanel(props: ChatPanelProps): React.ReactElement {
         <MessageList
           messages={props.messages}
           isStreaming={props.isStreaming}
+          onApplyEdit={props.onApplyEdit}
+          onRejectEdit={props.onRejectEdit}
+          onUndoEdit={props.onUndoEdit}
           onRetry={props.onRetry}
         />
       </div>

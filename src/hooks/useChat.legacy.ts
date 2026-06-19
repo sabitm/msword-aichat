@@ -1,8 +1,16 @@
 import * as React from "react";
+import { runAgent } from "../agent/orchestrator";
 import {
   appendCustomInstructions,
   promptOptionsFromPreferences,
 } from "../agent/prompt-options";
+import { expandSlashCommand } from "../agent/slash-commands";
+import { buildAgentSystemPrompt } from "../agent/system-prompt";
+import {
+  applyPendingEdit,
+  rejectPendingEdit,
+  undoPendingEdit,
+} from "../agent/tools/registry";
 import {
   clearConversation,
   loadConversation,
@@ -11,7 +19,7 @@ import {
 import { createProvider } from "../llm/factory";
 import type { AppPreferences } from "../settings/defaults";
 import { settingsStore } from "../settings/store.legacy";
-import type { AgentStep, PendingEdit } from "../types/agent";
+import type { AgentMessage, AgentStep, PendingEdit } from "../types/agent";
 import type { ContextMode } from "../types/context";
 import type { ChatMessage } from "../types/llm";
 import { trackEvent } from "../telemetry/telemetry.legacy";
@@ -51,6 +59,9 @@ export function useChat(
   isStreaming: boolean;
   sendMessage: (content: string) => void;
   retryMessage: (assistantMessageId: string) => void;
+  applyEdit: (messageId: string) => void;
+  rejectEdit: (messageId: string) => void;
+  undoEdit: (messageId: string) => void;
   clearMessages: () => void;
 } {
   var _a = React.useState<UiMessage[]>([]);
@@ -106,32 +117,14 @@ export function useChat(
     }
 
     var preferences = settingsStore.getPreferences();
-    if (preferences.interactionMode === "agent") {
-      var agentAssistantId = createId();
-      var agentNotice: UiMessage = {
-        id: agentAssistantId,
-        role: "assistant",
-        content:
-          "Agent mode arrives in IE-3. Open Settings and switch interaction mode to Chat, or wait for the next update.",
-        error: undefined,
-      };
-      var agentUser: UiMessage = {
-        id: createId(),
-        role: "user",
-        content: trimmed,
-      };
-      setMessages(function (prev) {
-        return options && options.skipUserMessage
-          ? prev.concat([agentNotice])
-          : prev.concat([agentUser, agentNotice]);
-      });
-      return;
-    }
+    var slash = expandSlashCommand(trimmed);
+    var userVisibleText = slash.displayText;
+    var promptText = slash.promptText;
 
     var userMessage: UiMessage = {
       id: createId(),
       role: "user",
-      content: trimmed,
+      content: userVisibleText,
     };
     var assistantId = createId();
     var assistantMessage: UiMessage = {
@@ -139,6 +132,7 @@ export function useChat(
       role: "assistant",
       content: "",
       isStreaming: true,
+      steps: preferences.interactionMode === "agent" ? [] : undefined,
     };
 
     setMessages(function (prev) {
@@ -147,11 +141,62 @@ export function useChat(
         : prev.concat([userMessage, assistantMessage]);
     });
     setIsStreaming(true);
-    trackEvent("chat_message_sent", { mode: "chat" });
+    trackEvent(preferences.interactionMode === "agent" ? "agent_run" : "chat_message_sent", {
+      mode: preferences.interactionMode,
+      slash: slash.command || "",
+    });
 
     getDocumentContext(contextMode)
       .then(function (documentContext) {
         var contextBlock = buildContextPrompt(documentContext);
+        var promptOptions = promptOptionsFromPreferences(preferences);
+
+        if (preferences.interactionMode === "agent") {
+          var agentMessages: AgentMessage[] = [
+            {
+              role: "system",
+              content: buildAgentSystemPrompt(contextBlock, promptOptions),
+            },
+          ];
+
+          for (var i = 0; i < messages.length; i++) {
+            agentMessages.push({
+              role: messages[i].role,
+              content: messages[i].content,
+            });
+          }
+          agentMessages.push({ role: "user", content: promptText });
+
+          return runAgent({
+            config: settingsStore.getConfig(),
+            messages: agentMessages,
+            autoApplyEdits: preferences.autoApplyEdits,
+            onStep: function (step) {
+              setMessages(function (prev) {
+                return prev.map(function (message) {
+                  if (message.id !== assistantId) {
+                    return message;
+                  }
+                  var steps = (message.steps || []).concat([step]);
+                  return Object.assign({}, message, {
+                    steps: steps,
+                    content:
+                      step.type === "text" && step.text ? step.text : message.content,
+                  });
+                });
+              });
+            },
+          }).then(function (result) {
+            updateAssistant(assistantId, {
+              content: result.text,
+              steps: result.steps,
+              pendingEdit: result.pendingEdit,
+              isStreaming: false,
+              error: result.error,
+            });
+          });
+        }
+
         var history: ChatMessage[] = [
           {
             role: "system",
@@ -159,13 +204,13 @@ export function useChat(
           },
         ];
 
-        for (var i = 0; i < messages.length; i++) {
+        for (var j = 0; j < messages.length; j++) {
           history.push({
-            role: messages[i].role,
-            content: messages[i].content,
+            role: messages[j].role,
+            content: messages[j].content,
           });
         }
-        history.push({ role: "user", content: trimmed });
+        history.push({ role: "user", content: promptText });
 
         var provider = createProvider(settingsStore.getConfig());
         return consumeChatStream(provider, history, assistantId, updateAssistant, setMessages);
@@ -218,11 +263,124 @@ export function useChat(
     updateFn(assistantId, { isStreaming: false });
   }
 
+  function applyEdit(messageId: string): void {
+    var target: UiMessage | undefined;
+    for (var i = 0; i < messages.length; i++) {
+      if (messages[i].id === messageId) {
+        target = messages[i];
+        break;
+      }
+    }
+    if (!target || !target.pendingEdit || target.pendingEdit.status !== "pending") {
+      return;
+    }
+
+    applyPendingEdit(target.pendingEdit)
+      .then(function () {
+        trackEvent("edit_applied", { tool: target!.pendingEdit!.toolName });
+        setMessages(function (prev) {
+          return prev.map(function (message) {
+            if (message.id === messageId && message.pendingEdit) {
+              return Object.assign({}, message, {
+                pendingEdit: Object.assign({}, message.pendingEdit, { status: "applied" }),
+                content: message.content + "\n\nEdit applied successfully.",
+              });
+            }
+            return message;
+          });
+        });
+      })
+      .catch(function (error) {
+        var errorMessage = error instanceof Error ? error.message : "Failed to apply edit";
+        setMessages(function (prev) {
+          return prev.map(function (message) {
+            return message.id === messageId
+              ? Object.assign({}, message, { error: errorMessage })
+              : message;
+          });
+        });
+      });
+  }
+
+  function rejectEdit(messageId: string): void {
+    var target: UiMessage | undefined;
+    for (var i = 0; i < messages.length; i++) {
+      if (messages[i].id === messageId) {
+        target = messages[i];
+        break;
+      }
+    }
+    if (!target || !target.pendingEdit || target.pendingEdit.status !== "pending") {
+      return;
+    }
+
+    rejectPendingEdit(target.pendingEdit)
+      .catch(function () {
+        // Best-effort bookmark cleanup.
+      })
+      .then(function () {
+        setMessages(function (prev) {
+          return prev.map(function (message) {
+            if (message.id === messageId && message.pendingEdit) {
+              return Object.assign({}, message, {
+                pendingEdit: Object.assign({}, message.pendingEdit, { status: "rejected" }),
+                content: message.content + "\n\nEdit rejected.",
+              });
+            }
+            return message;
+          });
+        });
+      });
+  }
+
+  function undoEdit(messageId: string): void {
+    var target: UiMessage | undefined;
+    for (var i = 0; i < messages.length; i++) {
+      if (messages[i].id === messageId) {
+        target = messages[i];
+        break;
+      }
+    }
+    if (
+      !target ||
+      !target.pendingEdit ||
+      target.pendingEdit.status !== "applied" ||
+      !target.pendingEdit.undo
+    ) {
+      return;
+    }
+
+    undoPendingEdit(target.pendingEdit)
+      .then(function () {
+        setMessages(function (prev) {
+          return prev.map(function (message) {
+            if (message.id === messageId && message.pendingEdit) {
+              return Object.assign({}, message, {
+                pendingEdit: Object.assign({}, message.pendingEdit, { status: "undone" }),
+                content: message.content + "\n\nEdit undone.",
+              });
+            }
+            return message;
+          });
+        });
+      })
+      .catch(function (error) {
+        var errorMessage = error instanceof Error ? error.message : "Failed to undo edit";
+        setMessages(function (prev) {
+          return prev.map(function (message) {
+            return message.id === messageId
+              ? Object.assign({}, message, { error: errorMessage })
+              : message;
+          });
+        });
+      });
+  }
+
   function retryMessage(assistantMessageId: string): void {
     var assistantIndex = -1;
-    for (var i = 0; i < messages.length; i++) {
-      if (messages[i].id === assistantMessageId) {
-        assistantIndex = i;
+    for (var k = 0; k < messages.length; k++) {
+      if (messages[k].id === assistantMessageId) {
+        assistantIndex = k;
         break;
       }
     }
@@ -258,6 +416,9 @@ export function useChat(
     isStreaming: isStreaming,
     sendMessage: sendMessage,
     retryMessage: retryMessage,
+    applyEdit: applyEdit,
+    rejectEdit: rejectEdit,
+    undoEdit: undoEdit,
     clearMessages: clearMessages,
   };
 }

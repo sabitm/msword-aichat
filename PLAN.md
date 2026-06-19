@@ -2,7 +2,7 @@
 
 > **Tracking doc.** Grand plan to support Word 2016 desktop on Windows (IE11 task-pane WebView).  
 > **Last updated:** 2026-06-19  
-> **Status:** IE-2 implemented on branch `ie11-rewrite` — chat MVP ready for Word 2016 sign-off
+> **Status:** IE-3 implemented on branch `ie11-rewrite` — agent + edit preview ready for Word 2016 sign-off
 
 ---
 
@@ -211,9 +211,10 @@ Chat mode uses SSE over `fetch` + `ReadableStream`. IE11 has **no** `ReadableStr
 
 ### IE-3 detail
 
-- [ ] Port `ModeBar`, `AgentTrace`, `EditPreview`, `ErrorActions`
-- [ ] Wire `runAgent` unchanged
-- [ ] Test all mutation tools + bookmark apply in Word 2016
+- [x] Port `ModeBar`, `AgentTrace`, `EditPreview`, `ErrorActions` (Fluent v8 / IE-safe)
+- [x] Wire `runAgent` in `useChat.legacy` with apply/reject/undo
+- [x] Slash command expansion in agent + chat send path
+- [ ] Verify in Word 2016: agent tool loop, edit preview Apply/Reject/Undo
 
 ### IE-4 detail
 
@@ -379,3 +380,4 @@ When approved, implementation order:
 | 2026-06-19 | IE rewrite plan drafted — Word 2016 IE11 confirmed as P0 host |
 | 2026-06-19 | IE-1 — Fluent v8 shell, settings panel, legacy store, WDS overlay off |
 | 2026-06-19 | IE-2 — Chat UI, XHR SSE streaming, document context, conversation persistence |
+| 2026-06-19 | IE-3 — Agent mode, agent trace, edit preview, apply/reject/undo |

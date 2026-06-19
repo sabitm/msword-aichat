@@ -21,12 +21,13 @@
     "src/telemetry/telemetry.legacy.ts",
     "src/conversation/store.legacy.ts",
     "src/word/document-key.legacy.ts",
-    "src/word/context.ts",
+    "src/word/**/*.ts",
     "src/llm/**/*.ts",
     "src/types/**/*.ts",
-    "src/agent/prompt-options.ts",
+    "src/agent/**/*.ts",
     "src/taskpane/main.legacy.tsx",
     "src/taskpane/App.legacy.tsx",
     "src/taskpane/components.legacy/**/*.tsx"
-  ]
+  ],
+  "exclude": ["src/word/document-key.ts"]
 }

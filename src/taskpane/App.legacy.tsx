@@ -59,6 +59,9 @@ export function AppLegacy(_props: AppLegacyProps): React.ReactElement {
           onContextModeChange={setContextMode}
           onSend={chat.sendMessage}
           onRetry={chat.retryMessage}
+          onApplyEdit={chat.applyEdit}
+          onRejectEdit={chat.rejectEdit}
+          onUndoEdit={chat.undoEdit}
         />
       ) : (
         <div className="panel-body">
