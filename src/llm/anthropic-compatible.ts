@@ -2,6 +2,7 @@ import type { AgentMessage, CompletionResult, ToolCall } from "../types/agent";
 import type { ChatEvent, ChatRequest, PingResult, ProviderConfig } from "../types/llm";
 import type { LLMProvider } from "./provider";
 import { normalizeBaseUrl } from "./provider";
+import { iterateSseLines } from "./sse-reader";
 
 interface AnthropicStreamEvent {
   type: string;
@@ -159,30 +160,28 @@ export class AnthropicCompatibleProvider implements LLMProvider {
         content: m.content,
       }));
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": this.config.apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: this.config.model,
-        system: systemMessage?.content,
-        messages: nonSystemMessages,
-        stream: request.stream ?? true,
-        max_tokens: request.maxTokens ?? this.config.maxTokens,
-        temperature: request.temperature ?? this.config.temperature,
-      }),
+    const headers = {
+      "Content-Type": "application/json",
+      "x-api-key": this.config.apiKey,
+      "anthropic-version": "2023-06-01",
+    };
+    const body = JSON.stringify({
+      model: this.config.model,
+      system: systemMessage?.content,
+      messages: nonSystemMessages,
+      stream: request.stream ?? true,
+      max_tokens: request.maxTokens ?? this.config.maxTokens,
+      temperature: request.temperature ?? this.config.temperature,
     });
 
-    if (!response.ok) {
-      const body = await response.text();
-      yield { type: "error", error: `HTTP ${response.status}: ${body}` };
-      return;
-    }
-
     if (!request.stream) {
+      const response = await fetch(url, { method: "POST", headers, body });
+      if (!response.ok) {
+        const errorBody = await response.text();
+        yield { type: "error", error: `HTTP ${response.status}: ${errorBody}` };
+        return;
+      }
+
       const json = (await response.json()) as AnthropicStreamEvent;
       const text =
         json.message?.content
@@ -196,65 +195,49 @@ export class AnthropicCompatibleProvider implements LLMProvider {
       return;
     }
 
-    const reader = response.body?.getReader();
-    if (!reader) {
-      yield { type: "error", error: "No response body" };
-      return;
-    }
-
-    const decoder = new TextDecoder();
-    let buffer = "";
     let currentEvent = "";
 
     try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      for await (const line of iterateSseLines({ url, method: "POST", headers, body })) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
+        if (trimmed.startsWith("event:")) {
+          currentEvent = trimmed.slice(6).trim();
+          continue;
+        }
 
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
+        if (!trimmed.startsWith("data:")) continue;
 
-          if (trimmed.startsWith("event:")) {
-            currentEvent = trimmed.slice(6).trim();
-            continue;
+        const payload = trimmed.slice(5).trim();
+        try {
+          const chunk = JSON.parse(payload) as AnthropicStreamEvent;
+          if (chunk.error?.message) {
+            yield { type: "error", error: chunk.error.message };
+            return;
           }
 
-          if (!trimmed.startsWith("data:")) continue;
-
-          const payload = trimmed.slice(5).trim();
-          try {
-            const chunk = JSON.parse(payload) as AnthropicStreamEvent;
-            if (chunk.error?.message) {
-              yield { type: "error", error: chunk.error.message };
-              return;
-            }
-
-            if (
-              currentEvent === "content_block_delta" &&
-              chunk.delta?.type === "text_delta" &&
-              chunk.delta.text
-            ) {
-              yield { type: "text_delta", text: chunk.delta.text };
-            }
-
-            if (currentEvent === "message_stop" || chunk.type === "message_stop") {
-              yield { type: "done" };
-              return;
-            }
-          } catch {
-            // Ignore malformed SSE chunks.
+          if (
+            currentEvent === "content_block_delta" &&
+            chunk.delta?.type === "text_delta" &&
+            chunk.delta.text
+          ) {
+            yield { type: "text_delta", text: chunk.delta.text };
           }
+
+          if (currentEvent === "message_stop" || chunk.type === "message_stop") {
+            yield { type: "done" };
+            return;
+          }
+        } catch {
+          // Ignore malformed SSE chunks.
         }
       }
 
       yield { type: "done" };
-    } finally {
-      reader.releaseLock();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Stream failed";
+      yield { type: "error", error: message };
     }
   }
 

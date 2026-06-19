@@ -2,7 +2,7 @@
 
 > **Tracking doc.** Grand plan to support Word 2016 desktop on Windows (IE11 task-pane WebView).  
 > **Last updated:** 2026-06-19  
-> **Status:** IE-1 implemented on branch `ie11-rewrite` — settings shell ready for Word 2016 sign-off
+> **Status:** IE-2 implemented on branch `ie11-rewrite` — chat MVP ready for Word 2016 sign-off
 
 ---
 
@@ -202,10 +202,12 @@ Chat mode uses SSE over `fetch` + `ReadableStream`. IE11 has **no** `ReadableStr
 
 ### IE-2 detail
 
-- [ ] Port `ChatPanel`, `MessageList`, `MessageInput`, `ContextBar`, `QuickActions`
-- [ ] Implement `useChat` without React 19-only APIs
-- [ ] XHR SSE in LLM layer
-- [ ] `useDocumentContext` — verify Office.js calls unchanged
+- [x] Port `ChatPanel`, `MessageList`, `MessageInput`, `ContextBar`, `QuickActions`, `ModeBar`, `ErrorActions`
+- [x] Implement `useChat.legacy` without React 19-only APIs (chat mode; agent deferred to IE-3)
+- [x] XHR SSE in `src/llm/sse-reader.ts` — used by OpenAI + Anthropic adapters
+- [x] `useDocumentContext.legacy` + IE-safe `document-key.legacy` (no `crypto.subtle`)
+- [x] Per-document conversation persistence via `store.legacy.ts`
+- [ ] Verify in Word 2016: chat streams, context bar, quick actions, retry on error
 
 ### IE-3 detail
 
@@ -376,3 +378,4 @@ When approved, implementation order:
 |------|-------|
 | 2026-06-19 | IE rewrite plan drafted — Word 2016 IE11 confirmed as P0 host |
 | 2026-06-19 | IE-1 — Fluent v8 shell, settings panel, legacy store, WDS overlay off |
+| 2026-06-19 | IE-2 — Chat UI, XHR SSE streaming, document context, conversation persistence |

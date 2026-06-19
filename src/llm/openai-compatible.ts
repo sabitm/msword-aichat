@@ -2,6 +2,7 @@ import type { AgentMessage, CompletionResult, ToolCall } from "../types/agent";
 import type { ChatEvent, ChatRequest, PingResult, ProviderConfig } from "../types/llm";
 import type { LLMProvider } from "./provider";
 import { normalizeBaseUrl } from "./provider";
+import { iterateSseLines } from "./sse-reader";
 
 interface OpenAIStreamChunk {
   choices?: Array<{
@@ -140,29 +141,27 @@ export class OpenAICompatibleProvider implements LLMProvider {
 
   async *chat(request: ChatRequest): AsyncIterable<ChatEvent> {
     const url = `${normalizeBaseUrl(this.config.baseUrl)}/chat/completions`;
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.config.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: this.config.model,
-        messages: request.messages,
-        tools: this.toOpenAITools(request.tools),
-        stream: request.stream ?? true,
-        max_tokens: request.maxTokens ?? this.config.maxTokens,
-        temperature: request.temperature ?? this.config.temperature,
-      }),
+    const headers = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${this.config.apiKey}`,
+    };
+    const body = JSON.stringify({
+      model: this.config.model,
+      messages: request.messages,
+      tools: this.toOpenAITools(request.tools),
+      stream: request.stream ?? true,
+      max_tokens: request.maxTokens ?? this.config.maxTokens,
+      temperature: request.temperature ?? this.config.temperature,
     });
 
-    if (!response.ok) {
-      const body = await response.text();
-      yield { type: "error", error: `HTTP ${response.status}: ${body}` };
-      return;
-    }
-
     if (!request.stream) {
+      const response = await fetch(url, { method: "POST", headers, body });
+      if (!response.ok) {
+        const errorBody = await response.text();
+        yield { type: "error", error: `HTTP ${response.status}: ${errorBody}` };
+        return;
+      }
+
       const json = (await response.json()) as OpenAICompletionResponse;
       const text = json.choices?.[0]?.message?.content ?? "";
       if (text) {
@@ -172,53 +171,36 @@ export class OpenAICompatibleProvider implements LLMProvider {
       return;
     }
 
-    const reader = response.body?.getReader();
-    if (!reader) {
-      yield { type: "error", error: "No response body" };
-      return;
-    }
-
-    const decoder = new TextDecoder();
-    let buffer = "";
-
     try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      for await (const line of iterateSseLines({ url, method: "POST", headers, body })) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data:")) continue;
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
+        const payload = trimmed.slice(5).trim();
+        if (payload === "[DONE]") {
+          yield { type: "done" };
+          return;
+        }
 
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith("data:")) continue;
-
-          const payload = trimmed.slice(5).trim();
-          if (payload === "[DONE]") {
-            yield { type: "done" };
+        try {
+          const chunk = JSON.parse(payload) as OpenAIStreamChunk;
+          if (chunk.error?.message) {
+            yield { type: "error", error: chunk.error.message };
             return;
           }
-
-          try {
-            const chunk = JSON.parse(payload) as OpenAIStreamChunk;
-            if (chunk.error?.message) {
-              yield { type: "error", error: chunk.error.message };
-              return;
-            }
-            const text = chunk.choices?.[0]?.delta?.content;
-            if (text) {
-              yield { type: "text_delta", text };
-            }
-          } catch {
-            // Ignore malformed SSE chunks.
+          const text = chunk.choices?.[0]?.delta?.content;
+          if (text) {
+            yield { type: "text_delta", text };
           }
+        } catch {
+          // Ignore malformed SSE chunks.
         }
       }
 
       yield { type: "done" };
-    } finally {
-      reader.releaseLock();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Stream failed";
+      yield { type: "error", error: message };
     }
   }
 
