@@ -18,7 +18,6 @@
     "src/hooks/useChat.legacy.ts",
     "src/hooks/useDocumentContext.legacy.ts",
     "src/hooks/useDocumentKey.legacy.ts",
-    "src/telemetry/telemetry.legacy.ts",
     "src/conversation/store.legacy.ts",
     "src/word/document-key.legacy.ts",
     "src/word/**/*.ts",

@@ -15,7 +15,6 @@ import { useSettingsStore } from "../../hooks/useSettingsStore.legacy";
 import { createProvider } from "../../llm/factory";
 import { fetchModelList } from "../../llm/models";
 import { settingsStore } from "../../settings/store.legacy";
-import { trackEvent } from "../../telemetry/telemetry.legacy";
 import type { PingResult, ProviderKind } from "../../types/llm";
 import { IeSelect } from "./IeSelect";
 
@@ -71,7 +70,6 @@ export function SettingsPanel(): React.ReactElement {
       .ping()
       .then(function (result) {
         setPingResult(result);
-        trackEvent("connection_test", { ok: result.ok, source: "settings" });
       })
       .catch(function (error) {
         setPingResult({
@@ -225,26 +223,6 @@ export function SettingsPanel(): React.ReactElement {
           settingsStore.updatePreferences({ persistConversations: Boolean(checked) });
         }}
         label="Remember conversation per document"
-      />
-
-      <Text variant="large" block>
-        Telemetry
-      </Text>
-      <Checkbox
-        checked={preferences.telemetryEnabled}
-        onChange={function (_event, checked) {
-          settingsStore.updatePreferences({ telemetryEnabled: Boolean(checked) });
-        }}
-        label="Send anonymous usage events"
-      />
-      <TextField
-        label="Telemetry endpoint (optional)"
-        description="POST JSON events when telemetry is on"
-        placeholder="https://telemetry.example.com/events"
-        value={preferences.telemetryEndpoint}
-        onChange={function (_event, value) {
-          settingsStore.updatePreferences({ telemetryEndpoint: value || "" });
-        }}
       />
 
       <div className="settings-actions">

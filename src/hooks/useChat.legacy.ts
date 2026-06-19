@@ -23,7 +23,6 @@ import { settingsStore } from "../settings/store.legacy";
 import type { AgentMessage, AgentStep, PendingEdit } from "../types/agent";
 import type { ContextMode } from "../types/context";
 import type { ChatMessage } from "../types/llm";
-import { trackEvent } from "../telemetry/telemetry.legacy";
 import { buildContextPrompt, getDocumentContext } from "../word/context";
 
 export interface UiMessage {
@@ -143,10 +142,6 @@ export function useChat(
         : prev.concat([userMessage, assistantMessage]);
     });
     setIsStreaming(true);
-    trackEvent(preferences.interactionMode === "agent" ? "agent_run" : "chat_message_sent", {
-      mode: preferences.interactionMode,
-      slash: slash.command || "",
-    });
 
     getDocumentContext(contextMode)
       .then(function (documentContext) {
@@ -217,7 +212,6 @@ export function useChat(
       })
       .catch(function (error) {
         var message = error instanceof Error ? error.message : "Request failed";
-        trackEvent("error_occurred", { surface: "chat", message: message });
         updateAssistant(assistantId, {
           isStreaming: false,
           error: message,
@@ -277,7 +271,6 @@ export function useChat(
 
     applyPendingEdit(target.pendingEdit)
       .then(function () {
-        trackEvent("edit_applied", { tool: target!.pendingEdit!.toolName });
         setMessages(function (prev) {
           return prev.map(function (message) {
             if (message.id === messageId && message.pendingEdit) {
