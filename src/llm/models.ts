@@ -1,5 +1,5 @@
 import type { ModelListResult, ProviderConfig } from "../types/llm";
-import { normalizeBaseUrl } from "./provider";
+import { formatNetworkError, normalizeBaseUrl } from "./provider";
 
 interface OpenAIModelsResponse {
   data?: Array<{ id?: string }>;
@@ -62,7 +62,7 @@ export async function fetchModelList(config: ProviderConfig): Promise<ModelListR
     return {
       ok: false,
       models: [],
-      message: error instanceof Error ? error.message : "Failed to fetch models",
+      message: formatNetworkError(error),
     };
   }
 }

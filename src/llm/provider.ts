@@ -12,3 +12,19 @@ export interface LLMProvider {
 export function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.trim().replace(/\/+$/, "");
 }
+
+export function formatNetworkError(error: unknown): string {
+  var message = error instanceof Error ? error.message : "Request failed";
+  if (
+    message === "Failed to fetch" ||
+    message.indexOf("NetworkError") >= 0 ||
+    message.indexOf("network error") >= 0
+  ) {
+    return (
+      "Failed to fetch — the browser blocked a cross-origin request (CORS). " +
+      "Your gateway must answer OPTIONS preflight with 2xx and Access-Control-Allow-* headers, " +
+      "or run `npm run proxy` and set base URL to http://localhost:8787/v1."
+    );
+  }
+  return message;
+}
