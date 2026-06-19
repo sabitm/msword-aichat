@@ -32,18 +32,18 @@ A Microsoft Word task-pane add-in that brings AI chat and agentic document editi
 
 | Platform | Minimum | Recommended |
 |----------|---------|-------------|
-| **Word on Windows** | Word **2016** + Microsoft Edge installed | **Microsoft 365** Word |
+| **Word on Windows** | **Office 2019+** or **Microsoft 365** with [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/) | **Microsoft 365** Word |
 | **Word on Mac** | Word **15.18**+ (2016-era) | **Microsoft 365** Word for Mac |
 | **Word on the web** | Modern browser (Edge, Chrome, Firefox, Safari) | Microsoft 365 account |
 
-**Not supported:** Office 2013 and earlier. The add-in uses ribbon commands, a modern web stack (React 19), and the Word JavaScript API — all of which require Word 2016 or newer.
+**Not supported:** Office 2013 and earlier. **Word 2016 desktop on Windows** uses Internet Explorer for task panes and shows a **blank pane** with this stack (React 19 + Vite) — use **Microsoft 365**, **Office 2019+**, or **Word on the web** instead.
 
 **Development:** Node.js 20+
 
 ## Prerequisites
 
 - **Node.js** 20+
-- **Microsoft Word 2016+** or **Microsoft 365 Word** (Desktop on Windows or Mac) for full add-in testing
+- **Microsoft 365 Word** or **Office 2019+** on Windows (with WebView2), or **Word on the web**
 - An OpenAI- or Anthropic-compatible API endpoint and API key
 
 ## Quick start
@@ -237,6 +237,14 @@ Manual smoke test in Word on the web before org-wide rollout:
 | Errors | Retry and Copy on a failed request |
 
 ## Troubleshooting
+
+**Blank white task pane (no UI)**
+
+Word loaded the pane but nothing renders. Common on **Office 2016 Windows**, which hosts add-ins in **Internet Explorer**. IE cannot run Vite dev modules or React 19, while a normal browser can.
+
+- **Fix:** Use **Microsoft 365 Word**, **Office 2019+** with WebView2, or **Word on the web**
+- After pulling the latest code, Office 2016 should show an explicit “Unsupported Office browser” message instead of a blank pane
+- Confirm WebView2: install from [Microsoft Edge WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)
 
 **Certificate error / "content is blocked" (Word task pane)**
 

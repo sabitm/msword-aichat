@@ -9,9 +9,49 @@
       type="text/javascript"
       src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"
     ></script>
+    <style>
+      .boot-error {
+        padding: 16px;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        line-height: 1.45;
+        color: #242424;
+      }
+      .boot-error h2 {
+        margin: 0 0 8px;
+        font-size: 16px;
+      }
+      .boot-error p {
+        margin: 0 0 8px;
+      }
+      .boot-error ul {
+        margin: 8px 0 0;
+        padding-left: 20px;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      (function () {
+        var isTrident = !!document.documentMode;
+        if (!isTrident) return;
+
+        var root = document.getElementById("root");
+        if (!root) return;
+
+        root.innerHTML =
+          '<div class="boot-error">' +
+          "<h2>Unsupported Office browser</h2>" +
+          "<p>Word is using Internet Explorer to host this task pane. This add-in requires a modern WebView (Edge / WebView2).</p>" +
+          "<p><strong>What to do:</strong></p>" +
+          "<ul>" +
+          "<li>Use <strong>Microsoft 365 Word</strong> or <strong>Office 2019+</strong> with <a href=\"https://developer.microsoft.com/microsoft-edge/webview2/\">WebView2</a> installed</li>" +
+          "<li>Or use <strong>Word on the web</strong></li>" +
+          "<li>Office 2016 desktop (IE mode) cannot run React 19 / Vite dev builds</li>" +
+          "</ul>" +
+          "</div>";
+      })();
+    </script>
     <script type="module" src="/src/taskpane/main.tsx"></script>
   </body>
 </html>
