@@ -69,7 +69,7 @@ Office 2016 on Windows uses **IE11** for task panes. Use the **`ie11-rewrite`** 
 - `npm run dev` serves `taskpane.bundle.js` for IE11
 - Phase **IE-0** shows a proof-of-life screen (“IE11 host OK”) before the full UI port
 
-Modern stack (`dev:modern` / Vite / React 19) remains in repo for reference until IE-5.
+Modern UI source (`src/taskpane/components/`, etc.) remains for porting reference; modern-only npm deps were removed to fix `npm install` on React 16.
 
 ### Sideload in Word (Desktop)
 

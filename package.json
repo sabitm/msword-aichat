@@ -8,10 +8,7 @@
     "certs:verify": "office-addin-dev-certs verify",
     "dev": "webpack serve --config webpack.config.cjs",
     "build": "webpack --config webpack.config.cjs --mode production",
-    "dev:modern": "vite",
-    "build:modern": "tsc -p tsconfig.json --noEmit && vite build",
     "typecheck": "tsc -p tsconfig.legacy.json --noEmit",
-    "typecheck:modern": "tsc -b --noEmit",
     "start": "office-addin-debugging start manifest.xml",
     "stop": "office-addin-debugging stop manifest.xml",
     "validate": "office-addin-manifest validate manifest.xml",
@@ -32,13 +29,9 @@
     "@babel/preset-env": "^7.28.3",
     "@babel/preset-react": "^7.27.1",
     "@babel/preset-typescript": "^7.27.1",
-    "@fluentui/react-components": "^9.72.7",
-    "@fluentui/react-icons": "^2.0.313",
     "@types/office-js": "^1.0.537",
     "@types/react": "^16.14.62",
     "@types/react-dom": "^16.9.25",
-    "@vitejs/plugin-basic-ssl": "^2.1.0",
-    "@vitejs/plugin-react": "^5.1.0",
     "babel-loader": "^10.0.0",
     "copy-webpack-plugin": "^13.0.1",
     "css-loader": "^7.1.2",
@@ -48,10 +41,8 @@
     "office-addin-manifest": "^2.0.3",
     "style-loader": "^4.0.0",
     "typescript": "^5.9.3",
-    "vite": "^7.2.2",
     "webpack": "^5.102.1",
     "webpack-cli": "^6.0.1",
-    "webpack-dev-server": "^5.2.2",
-    "zustand": "^5.0.8"
+    "webpack-dev-server": "^5.2.2"
   }
 }
