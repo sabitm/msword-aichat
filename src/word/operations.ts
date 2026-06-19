@@ -253,6 +253,24 @@ export async function insertCommentOnSelection(comment: string): Promise<void> {
   }
 }
 
+function normalizeCellGrid(
+  cellValues: string[][] | undefined,
+  rows: number,
+  columns: number,
+): string[][] | null {
+  if (!cellValues?.length) return null;
+  const grid: string[][] = [];
+  for (let rowIndex = 0; rowIndex < rows; rowIndex += 1) {
+    const source = cellValues[rowIndex] ?? [];
+    const line: string[] = [];
+    for (let colIndex = 0; colIndex < columns; colIndex += 1) {
+      line.push(source[colIndex] ?? "");
+    }
+    grid.push(line);
+  }
+  return grid;
+}
+
 export async function insertTableAtBookmark(
   bookmark: string,
   rows: number,
@@ -260,26 +278,20 @@ export async function insertTableAtBookmark(
   cellValues?: string[][],
 ): Promise<void> {
   assertWordAvailable();
+  const grid = normalizeCellGrid(cellValues, rows, columns);
+
   try {
     await Word.run(async (context) => {
       const range = context.document.getBookmarkRange(bookmark);
       const table = range.insertTable(rows, columns, Word.InsertLocation.after);
-
-      if (cellValues?.length) {
-        // Use getCell + one final sync — rows.items/col indexing without loading
-        // items first throws ItemNotFound on Word 2016 desktop.
-        for (let rowIndex = 0; rowIndex < Math.min(rows, cellValues.length); rowIndex += 1) {
-          const rowValues = cellValues[rowIndex] ?? [];
-          for (let colIndex = 0; colIndex < Math.min(columns, rowValues.length); colIndex += 1) {
-            const value = rowValues[colIndex] ?? "";
-            if (!value) continue;
-            const cell = table.getCell(rowIndex, colIndex);
-            cell.body.insertText(value, Word.InsertLocation.replace);
-          }
-        }
-      }
-
+      // Materialize the table before writing cells (Word 2016 needs this).
       await context.sync();
+
+      if (grid) {
+        // Bulk assign — avoids per-cell getCell/rows.items ItemNotFound on IE WebView.
+        table.values = grid;
+        await context.sync();
+      }
     });
   } catch (error) {
     wrapWordError(error, "Failed to insert table.");
