@@ -1,17 +1,18 @@
-import { Dropdown, type IDropdownOption, Text } from "@fluentui/react";
+import { Text } from "@fluentui/react";
 import * as React from "react";
 import { useSettingsStore } from "../../hooks/useSettingsStore.legacy";
 import { settingsStore } from "../../settings/store.legacy";
 import type { InteractionMode } from "../../types/agent";
+import { IeSelect } from "./IeSelect";
 
 var MODE_LABELS: Record<InteractionMode, string> = {
   chat: "Chat",
   agent: "Agent",
 };
 
-var modeOptions: IDropdownOption[] = [
-  { key: "chat", text: MODE_LABELS.chat },
-  { key: "agent", text: MODE_LABELS.agent },
+var modeOptions = [
+  { value: "chat", label: MODE_LABELS.chat },
+  { value: "agent", label: MODE_LABELS.agent },
 ];
 
 export function ModeBar(): React.ReactElement {
@@ -19,18 +20,13 @@ export function ModeBar(): React.ReactElement {
 
   return (
     <div className="mode-bar">
-      <Text variant="small" block>
-        Mode
-      </Text>
-      <Dropdown
-        className="mode-dropdown"
-        selectedKey={preferences.interactionMode}
+      <IeSelect
+        label="Mode"
+        fieldClassName="mode-dropdown"
+        value={preferences.interactionMode}
         options={modeOptions}
-        onChange={function (_event, option) {
-          if (!option) {
-            return;
-          }
-          settingsStore.setInteractionMode(option.key as InteractionMode);
+        onChange={function (value) {
+          settingsStore.setInteractionMode(value as InteractionMode);
           settingsStore.save();
         }}
       />

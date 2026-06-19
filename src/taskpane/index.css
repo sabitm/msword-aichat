@@ -22,6 +22,56 @@ body,
   background: #faf9f8;
 }
 
+.header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid #e0e0e0;
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.header-title {
+  font-weight: 600;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.ie-select-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+
+.ie-select-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #323130;
+}
+
+.ie-select {
+  width: 100%;
+  max-width: 100%;
+  padding: 6px 8px;
+  font-size: 14px;
+  font-family: "Segoe UI", Tahoma, sans-serif;
+  border: 1px solid #8a8886;
+  border-radius: 2px;
+  background: #fff;
+  color: #323130;
+}
+
 .chat-panel {
   display: flex;
   flex-direction: column;

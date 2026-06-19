@@ -1,14 +1,5 @@
-import {
-  CommandBar,
-  type ICommandBarItemProps,
-  mergeStyles,
-} from "@fluentui/react";
+import { DefaultButton, IconButton } from "@fluentui/react";
 import * as React from "react";
-
-var headerRootClass = mergeStyles({
-  borderBottom: "1px solid #e0e0e0",
-  backgroundColor: "#fff",
-});
 
 interface HeaderProps {
   view: "chat" | "settings";
@@ -23,43 +14,46 @@ export function Header(props: HeaderProps): React.ReactElement {
   var onNewChat = props.onNewChat;
   var canChat = props.canChat;
 
-  var items: ICommandBarItemProps[] = [
-    {
-      key: "title",
-      text: "Word AI Chat",
-      disabled: true,
-      styles: { root: { fontWeight: 600 } },
-    },
-    {
-      key: "chat",
-      text: "Chat",
-      iconProps: { iconName: "Chat" },
-      buttonStyles: view === "chat" ? { root: { backgroundColor: "#deecf9" } } : undefined,
-      onClick: function () {
-        onViewChange("chat");
-      },
-    },
-    {
-      key: "settings",
-      text: "Settings",
-      iconProps: { iconName: "Settings" },
-      buttonStyles: view === "settings" ? { root: { backgroundColor: "#deecf9" } } : undefined,
-      onClick: function () {
-        onViewChange("settings");
-      },
-    },
-    {
-      key: "newChat",
-      text: "New chat",
-      iconProps: { iconName: "Delete" },
-      disabled: !canChat,
-      onClick: onNewChat,
-    },
-  ];
-
   return (
-    <div className={headerRootClass}>
-      <CommandBar items={items} ariaLabel="Word AI Chat toolbar" />
+    <div className="header-bar" aria-label="Word AI Chat toolbar">
+      <span className="header-title">Word AI Chat</span>
+      <div className="header-actions">
+        <IconButton
+          iconProps={{ iconName: "Chat" }}
+          title="Chat"
+          ariaLabel="Chat"
+          checked={view === "chat"}
+          styles={
+            view === "chat"
+              ? { root: { backgroundColor: "#deecf9" }, rootChecked: { backgroundColor: "#deecf9" } }
+              : undefined
+          }
+          onClick={function () {
+            onViewChange("chat");
+          }}
+        />
+        <IconButton
+          iconProps={{ iconName: "Settings" }}
+          title="Settings"
+          ariaLabel="Settings"
+          checked={view === "settings"}
+          styles={
+            view === "settings"
+              ? { root: { backgroundColor: "#deecf9" }, rootChecked: { backgroundColor: "#deecf9" } }
+              : undefined
+          }
+          onClick={function () {
+            onViewChange("settings");
+          }}
+        />
+        <DefaultButton
+          iconProps={{ iconName: "Delete" }}
+          disabled={!canChat}
+          onClick={onNewChat}
+        >
+          New chat
+        </DefaultButton>
+      </div>
     </div>
   );
 }

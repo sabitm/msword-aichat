@@ -1,22 +1,16 @@
-import {
-  Dropdown,
-  type IDropdownOption,
-  IconButton,
-  Spinner,
-  SpinnerSize,
-  Text,
-} from "@fluentui/react";
+import { IconButton, Spinner, SpinnerSize, Text } from "@fluentui/react";
 import * as React from "react";
 import {
   CONTEXT_MODE_LABELS,
   type ContextMode,
   type DocumentContext,
 } from "../../types/context";
+import { IeSelect } from "./IeSelect";
 
-var contextOptions: IDropdownOption[] = [
-  { key: "selection", text: CONTEXT_MODE_LABELS.selection },
-  { key: "outline", text: CONTEXT_MODE_LABELS.outline },
-  { key: "none", text: CONTEXT_MODE_LABELS.none },
+var contextOptions = [
+  { value: "selection", label: CONTEXT_MODE_LABELS.selection },
+  { value: "outline", label: CONTEXT_MODE_LABELS.outline },
+  { value: "none", label: CONTEXT_MODE_LABELS.none },
 ];
 
 interface ContextBarProps {
@@ -55,18 +49,14 @@ export function ContextBar(props: ContextBarProps): React.ReactElement {
   return (
     <div className="context-bar">
       <div className="context-bar-row">
-        <Text variant="small" styles={{ root: { fontWeight: 600 } }}>
-          Context
-        </Text>
-        <Dropdown
-          className="context-dropdown"
-          disabled={props.disabled}
-          selectedKey={props.mode}
+        <IeSelect
+          label="Context"
+          fieldClassName="context-dropdown"
+          value={props.mode}
           options={contextOptions}
-          onChange={function (_event, option) {
-            if (option) {
-              props.onModeChange(option.key as ContextMode);
-            }
+          disabled={props.disabled}
+          onChange={function (value) {
+            props.onModeChange(value as ContextMode);
           }}
         />
         <IconButton

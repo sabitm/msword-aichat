@@ -1,9 +1,6 @@
 import {
   Checkbox,
   DefaultButton,
-  Dropdown,
-  type IDropdownOption,
-  Label,
   MessageBar,
   MessageBarType,
   PrimaryButton,
@@ -20,15 +17,16 @@ import { fetchModelList } from "../../llm/models";
 import { settingsStore } from "../../settings/store.legacy";
 import { trackEvent } from "../../telemetry/telemetry.legacy";
 import type { PingResult, ProviderKind } from "../../types/llm";
+import { IeSelect } from "./IeSelect";
 
 var providerLabels: Record<ProviderKind, string> = {
   openai: "OpenAI-compatible",
   anthropic: "Anthropic-compatible",
 };
 
-var providerOptions: IDropdownOption[] = [
-  { key: "openai", text: providerLabels.openai },
-  { key: "anthropic", text: providerLabels.anthropic },
+var providerOptions = [
+  { value: "openai", label: providerLabels.openai },
+  { value: "anthropic", label: providerLabels.anthropic },
 ];
 
 export function SettingsPanel(): React.ReactElement {
@@ -57,8 +55,8 @@ export function SettingsPanel(): React.ReactElement {
   var availableModels = _e[0];
   var setAvailableModels = _e[1];
 
-  var modelOptions: IDropdownOption[] = availableModels.map(function (model) {
-    return { key: model, text: model };
+  var modelOptions = availableModels.map(function (model) {
+    return { value: model, label: model };
   });
 
   function handleSave(): void {
@@ -112,14 +110,12 @@ export function SettingsPanel(): React.ReactElement {
         device.
       </Text>
 
-      <Label>Provider type</Label>
-      <Dropdown
-        selectedKey={config.kind}
+      <IeSelect
+        label="Provider type"
+        value={config.kind}
         options={providerOptions}
-        onChange={function (_event, option) {
-          if (option) {
-            settingsStore.setKind(option.key as ProviderKind);
-          }
+        onChange={function (value) {
+          settingsStore.setKind(value as ProviderKind);
         }}
       />
 
@@ -141,19 +137,18 @@ export function SettingsPanel(): React.ReactElement {
         }}
       />
 
-      <Label>Model</Label>
       {availableModels.length ? (
-        <Dropdown
-          selectedKey={config.model}
+        <IeSelect
+          label="Model"
+          value={config.model}
           options={modelOptions}
-          onChange={function (_event, option) {
-            if (option) {
-              settingsStore.update({ model: String(option.key) });
-            }
+          onChange={function (value) {
+            settingsStore.update({ model: value });
           }}
         />
       ) : (
         <TextField
+          label="Model"
           description="Fetch from /models or type a model id"
           value={config.model}
           onChange={function (_event, value) {
@@ -162,7 +157,9 @@ export function SettingsPanel(): React.ReactElement {
         />
       )}
 
-      <Label>{"Max tokens: " + config.maxTokens}</Label>
+      <Text variant="medium" block>
+        {"Max tokens: " + config.maxTokens}
+      </Text>
       <Slider
         min={256}
         max={8192}
@@ -174,7 +171,9 @@ export function SettingsPanel(): React.ReactElement {
         }}
       />
 
-      <Label>{"Temperature: " + config.temperature.toFixed(1)}</Label>
+      <Text variant="medium" block>
+        {"Temperature: " + config.temperature.toFixed(1)}
+      </Text>
       <Slider
         min={0}
         max={2}
