@@ -1,4 +1,5 @@
 const path = require("path");
+const webpack = require("webpack");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
 const CopyWebpackPlugin = require("copy-webpack-plugin");
 
@@ -43,6 +44,9 @@ module.exports = async (_env, argv) => {
       ],
     },
     plugins: [
+      new webpack.DefinePlugin({
+        "process.env.NODE_ENV": JSON.stringify(isProd ? "production" : "development"),
+      }),
       new HtmlWebpackPlugin({
         template: "taskpane.template.html",
         filename: "taskpane.html",
@@ -68,7 +72,11 @@ module.exports = async (_env, argv) => {
       headers: {
         "Access-Control-Allow-Origin": "*",
       },
-      hot: true,
+      hot: false,
+      liveReload: false,
+      client: {
+        overlay: false,
+      },
       historyApiFallback: false,
     },
     performance: {

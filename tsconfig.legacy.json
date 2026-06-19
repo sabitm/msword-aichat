@@ -8,7 +8,19 @@
     "jsx": "react",
     "strict": true,
     "noEmit": true,
-    "types": ["office-js"]
+    "types": ["office-js", "node"]
   },
-  "include": ["src/polyfills.ts", "src/taskpane/main.legacy.tsx", "src/taskpane/App.legacy.tsx"]
+  "include": [
+    "src/polyfills.ts",
+    "src/settings/store.legacy.ts",
+    "src/settings/defaults.ts",
+    "src/hooks/useSettingsStore.legacy.ts",
+    "src/telemetry/telemetry.legacy.ts",
+    "src/llm/**/*.ts",
+    "src/types/**/*.ts",
+    "src/agent/**/*.ts",
+    "src/taskpane/main.legacy.tsx",
+    "src/taskpane/App.legacy.tsx",
+    "src/taskpane/components.legacy/**/*.tsx"
+  ]
 }

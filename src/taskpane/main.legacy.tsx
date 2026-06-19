@@ -1,6 +1,10 @@
+import { initializeIcons } from "@fluentui/react";
 import * as React from "react";
 import * as ReactDOM from "react-dom";
 import { AppLegacy } from "./App.legacy";
+import "./index.css";
+
+initializeIcons();
 
 function getHostLabel(): string {
   if (typeof Office === "undefined") {

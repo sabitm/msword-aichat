@@ -2,7 +2,7 @@
 
 > **Tracking doc.** Grand plan to support Word 2016 desktop on Windows (IE11 task-pane WebView).  
 > **Last updated:** 2026-06-19  
-> **Status:** IE-0 implemented on branch `ie11-rewrite` — awaiting Word 2016 sign-off
+> **Status:** IE-1 implemented on branch `ie11-rewrite` — settings shell ready for Word 2016 sign-off
 
 ---
 
@@ -189,13 +189,15 @@ Chat mode uses SSE over `fetch` + `ReadableStream`. IE11 has **no** `ReadableStr
 - [x] `core-js` entry import first
 - [x] `taskpane.template.html` — webpack injects ES5 bundle (no `type="module"`)
 - [x] `npm run dev` → webpack-dev-server HTTPS port 3000 + office-addin-dev-certs
-- [ ] Verify in Word 2016: shows "IE11 host OK" message (user sign-off)
+- [x] Verify in Word 2016: shows "IE11 host OK" message (user sign-off)
 
 ### IE-1 detail
 
-- [ ] `@fluentui/react@8`, `Customizer` / `ThemeProvider`
-- [ ] Port: `App`, `Header`, `SettingsPanel` (Dropdown → v8 `Dropdown`, etc.)
-- [ ] Replace Zustand with `createStore()` module (subscribe + getState)
+- [x] `@fluentui/react@8`, `initializeIcons` + Fluent v8 controls
+- [x] Port: `App.legacy`, `Header`, `SettingsPanel`, `ChatPlaceholder` (v8 `Dropdown`, `TextField`, etc.)
+- [x] Replace Zustand with `settingsStore` pub/sub module (`store.legacy.ts`)
+- [x] Disable webpack HMR + error overlay (fixes red `InvalidArgument` dev overlay noise)
+- [ ] Verify in Word 2016: save/load settings, test connection, fetch models
 - [ ] Port onboarding can wait until IE-4 or minimal stub → settings
 
 ### IE-2 detail
@@ -373,3 +375,4 @@ When approved, implementation order:
 | Date | Event |
 |------|-------|
 | 2026-06-19 | IE rewrite plan drafted — Word 2016 IE11 confirmed as P0 host |
+| 2026-06-19 | IE-1 — Fluent v8 shell, settings panel, legacy store, WDS overlay off |

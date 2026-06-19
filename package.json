@@ -18,6 +18,7 @@
     "smoke": "node scripts/smoke-test.mjs"
   },
   "dependencies": {
+    "@fluentui/react": "^8.122.14",
     "core-js": "^3.47.0",
     "react": "16.14.0",
     "react-dom": "16.14.0",
