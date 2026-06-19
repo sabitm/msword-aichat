@@ -2,7 +2,7 @@
 
 > **Tracking doc.** Grand plan to support Word 2016 desktop on Windows (IE11 task-pane WebView).  
 > **Last updated:** 2026-06-19  
-> **Status:** IE-3 implemented on branch `ie11-rewrite` — agent + edit preview ready for Word 2016 sign-off
+> **Status:** IE-4 implemented on branch `ie11-rewrite` — ready for Word 2016 sign-off before IE-5 ship
 
 ---
 
@@ -222,8 +222,8 @@ Chat mode uses SSE over `fetch` + `ReadableStream`. IE11 has **no** `ReadableStr
 - [x] Conversation persistence (IE-2)
 - [x] Model list fetch + Test connection (IE-1)
 - [x] **Telemetry — skipped** (no settings UI, no `trackEvent` in legacy bundle)
-- [ ] Slash command hints in `MessageInput` (`/fix`, `/table`, … autocomplete list)
-- [ ] README: Word 2016 supported, CORS/proxy notes for local routers
+- [x] Slash command hints in `MessageInput.legacy` (`/fix`, `/table`, … autocomplete list)
+- [x] README: Word 2016 supported on `ie11-rewrite`, CORS/proxy notes for local routers
 
 ### IE-5 detail
 
@@ -385,3 +385,4 @@ When approved, implementation order:
 | 2026-06-19 | IE-3 — Agent mode, agent trace, edit preview, apply/reject/undo |
 | 2026-06-19 | IE-4 plan revised — onboarding removed; direct Settings/Chat shell kept |
 | 2026-06-19 | IE-4 plan revised — telemetry removed from legacy build |
+| 2026-06-19 | IE-4 — slash hints, README for Word 2016 + CORS (no onboarding/telemetry) |

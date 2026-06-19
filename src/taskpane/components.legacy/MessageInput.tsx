@@ -1,5 +1,6 @@
-import { IconButton, TextField } from "@fluentui/react";
+import { IconButton, Text, TextField } from "@fluentui/react";
 import * as React from "react";
+import { listMatchingSlashCommands } from "../../agent/slash-commands";
 
 interface MessageInputProps {
   disabled?: boolean;
@@ -10,6 +11,8 @@ export function MessageInput(props: MessageInputProps): React.ReactElement {
   var _a = React.useState("");
   var value = _a[0];
   var setValue = _a[1];
+
+  var slashMatches = listMatchingSlashCommands(value);
 
   function handleSend(): void {
     var trimmed = value.trim();
@@ -22,6 +25,28 @@ export function MessageInput(props: MessageInputProps): React.ReactElement {
 
   return (
     <div className="chat-input-shell">
+      {slashMatches.length > 0 ? (
+        <div className="slash-hints" role="listbox" aria-label="Slash commands">
+          {slashMatches.map(function (command) {
+            return (
+              <button
+                key={command.name}
+                type="button"
+                className="slash-hint-item"
+                disabled={props.disabled}
+                onClick={function () {
+                  setValue("/" + command.name + " ");
+                }}
+              >
+                <Text variant="small" styles={{ root: { fontWeight: 600 } }}>
+                  /{command.name}
+                </Text>
+                <Text variant="small">{command.description}</Text>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
       <div className="chat-input-bar">
         <TextField
           multiline
@@ -32,7 +57,7 @@ export function MessageInput(props: MessageInputProps): React.ReactElement {
           placeholder={
             props.disabled
               ? "Configure your AI endpoint in Settings"
-              : "Message the assistant about your document…"
+              : "Message… (/fix, /table, /toc, /summarize, /formal, /comment)"
           }
           onChange={function (_event, nextValue) {
             setValue(nextValue || "");

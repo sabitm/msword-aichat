@@ -22,28 +22,27 @@ A Microsoft Word task-pane add-in that brings AI chat and agentic document editi
 - Document context modes: Selection, Outline, or None
 - Quick actions: **Summarize**, **Improve**, **Explain**
 - API keys stored locally on the device (separate from other settings)
-- **First-run onboarding** — provider setup, connection test, mode selection
 - **Fetch models** — load model list from `/models` when your gateway supports it
 - **Error actions** — Retry failed messages or copy error details
 - **Production package** — `manifest.prod.xml` + `npm run package` for org catalog deployment
-- Opt-in telemetry hooks (local debug only; no remote collection yet)
+- **Slash command hints** — type `/` in the message box for autocomplete (`/fix`, `/table`, …)
 
 ## System requirements
 
 | Platform | Minimum | Recommended |
 |----------|---------|-------------|
-| **Word on Windows** | **Office 2019+** or **Microsoft 365** with [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/) | **Microsoft 365** Word |
+| **Word on Windows** | **Office 2016+** on `ie11-rewrite` branch; **Office 2019+** / **M365** on `main` | **Microsoft 365** Word |
 | **Word on Mac** | Word **15.18**+ (2016-era) | **Microsoft 365** Word for Mac |
 | **Word on the web** | Modern browser (Edge, Chrome, Firefox, Safari) | Microsoft 365 account |
 
-**Not supported:** Office 2013 and earlier. **Word 2016 desktop on Windows** uses Internet Explorer for task panes and shows a **blank pane** with this stack (React 19 + Vite) — use **Microsoft 365**, **Office 2019+**, or **Word on the web** instead.
+**Branches:** `main` targets **Office 2019+ / M365** (React 19 + Vite). **`ie11-rewrite`** targets **Word 2016 Windows** (IE11 task pane, Webpack + React 16 + ES5). Office 2013 and earlier are not supported.
 
 **Development:** Node.js 20+
 
 ## Prerequisites
 
 - **Node.js** 20+
-- **Microsoft 365 Word** or **Office 2019+** on Windows (with WebView2), or **Word on the web**
+- **Word 2016+** on Windows (`ie11-rewrite`), or **Office 2019+** / **M365** (`main`), or **Word on the web**
 - An OpenAI- or Anthropic-compatible API endpoint and API key
 
 ## Quick start
@@ -63,13 +62,21 @@ The dev server runs at **https://localhost:3000**.
 
 ### Word 2016 (IE11) — `ie11-rewrite` branch
 
-Office 2016 on Windows uses **IE11** for task panes. Use the **`ie11-rewrite`** branch:
+Office 2016 on Windows uses **IE11** for task panes. Check out **`ie11-rewrite`**:
 
-- **Webpack** + **React 16** + **ES5** bundle (no Vite ESM)
-- `npm run dev` serves `taskpane.bundle.js` for IE11
-- Phase **IE-0** shows a proof-of-life screen (“IE11 host OK”) before the full UI port
+```bash
+git checkout ie11-rewrite
+npm install
+npm run certs    # once, elevated — trusted localhost HTTPS
+npm run dev      # Webpack dev server → https://localhost:3000
+npm start        # sideload in Word (close Word first)
+```
 
-Modern UI source (`src/taskpane/components/`, etc.) remains for porting reference; modern-only npm deps were removed to fix `npm install` on React 16.
+- **Webpack** + **React 16** + **Fluent UI v8** + **ES5** bundle (no Vite ESM)
+- Direct **Settings** and **Chat** tabs — no onboarding wizard, no telemetry
+- Chat streaming (XHR SSE), agent mode, edit preview, slash commands, per-document persistence
+
+Legacy UI lives under `src/taskpane/components.legacy/`; `src/taskpane/components/` is the modern reference on `main`.
 
 ### Sideload in Word (Desktop)
 
@@ -133,13 +140,13 @@ Enable **Auto-apply document edits** in Settings to skip the preview.
 
 ## Configuration
 
-On first launch, a **5-step onboarding wizard** walks you through setup. You can revisit **Settings** anytime.
+Open **Settings** from the task-pane header (the add-in opens Settings automatically until configured).
 
 1. Choose **OpenAI-compatible** or **Anthropic-compatible**
 2. Set **Base URL** — e.g. `https://api.openai.com/v1` or your gateway URL
 3. Enter **API key** and **model** name (or click **Fetch models** if `/models` is available)
 4. Click **Save settings** and **Test connection**
-5. Pick default **Chat** or **Agent** mode, then **Get started**
+5. Switch to **Chat**, pick **Chat** or **Agent** mode, and send a message
 
 ### Example endpoints
 
@@ -153,7 +160,7 @@ On first launch, a **5-step onboarding wizard** walks you through setup. You can
 
 | Command | Description |
 |---------|-------------|
-| `npm run dev` | Start Vite dev server on port 3000 (HTTPS) |
+| `npm run dev` | Start dev server on port 3000 (HTTPS) — Webpack on `ie11-rewrite`, Vite on `main` |
 | `npm start` | Sideload add-in in Word + start dev server |
 | `npm stop` | Unregister sideloaded add-in |
 | `npm run build` | Typecheck and build production bundle to `dist/` |
@@ -223,15 +230,29 @@ Upload the contents of `package/` to your HTTPS origin. Use `manifest.xml` from 
 
 For local development, keep using root `manifest.xml` (localhost URLs).
 
-### CORS dev proxy (enterprise / local gateways)
+### CORS and local routers
 
-If your LLM gateway blocks browser origins from the task pane, run the included proxy:
+The task pane runs at `https://localhost:3000`. Calls to a **different origin** (your local AI router, a remote gateway, etc.) trigger a browser **CORS preflight** (`OPTIONS` before `GET`/`POST`). If the router returns **405** on `OPTIONS`, you will see **Failed to fetch** in Settings or chat.
 
-```bash
-TARGET_URL=https://api.openai.com npm run proxy
+**Option A — fix your router (recommended for local dev)**
+
+Respond to `OPTIONS` on `/v1/*` with **204** and headers such as:
+
+```
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: GET, POST, OPTIONS
+Access-Control-Allow-Headers: Authorization, Content-Type, x-api-key, anthropic-version, Accept
 ```
 
-Then set **Base URL** to `http://localhost:8787/v1` in Settings. The proxy adds CORS headers and forwards requests. Use only for development — production should allow the add-in origin or use an org-managed proxy.
+**Option B — dev CORS proxy**
+
+```bash
+# PowerShell — point at your router's base (no /v1 suffix in TARGET_URL host path)
+$env:TARGET_URL="http://localhost:8080"
+npm run proxy
+```
+
+Then set **Base URL** to `http://localhost:8787/v1` in Settings. The proxy answers `OPTIONS` and forwards traffic. Development only — production should allow the add-in origin or use an org-managed proxy.
 
 ## Word on the web QA checklist
 
@@ -253,11 +274,17 @@ Manual smoke test in Word on the web before org-wide rollout:
 
 **Blank white task pane (no UI)**
 
-Word loaded the pane but nothing renders. Common on **Office 2016 Windows**, which hosts add-ins in **Internet Explorer**. IE cannot run Vite dev modules or React 19, while a normal browser can.
+- **Word 2016 Windows:** use branch **`ie11-rewrite`** (Webpack ES5 bundle). `main` uses Vite + React 19, which IE11 cannot run.
+- **Office 2019+ / M365:** confirm [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/) is installed.
+- Restart `npm run dev` after `npm run certs`; close Word before `npm start`.
 
-- **Fix:** Use **Microsoft 365 Word**, **Office 2019+** with WebView2, or **Word on the web**
-- After pulling the latest code, Office 2016 should show an explicit “Unsupported Office browser” message instead of a blank pane
-- Confirm WebView2: install from [Microsoft Edge WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)
+**Red “Uncaught runtime errors” overlay (dev only)**
+
+Webpack dev-server HMR can trigger this on IE11. `ie11-rewrite` disables the overlay — restart `npm run dev` if you still see it.
+
+**Fluent dropdown shows white screen (IE11)**
+
+Use native `<select>` controls in the legacy UI (`IeSelect`). Avoid Fluent `Dropdown` / `CommandBar` overflow menus in the task pane on Word 2016.
 
 **Certificate error / "content is blocked" (Word task pane)**
 
@@ -278,10 +305,10 @@ Word uses its own embedded browser and does **not** trust Vite's default self-si
 - Re-run `npm start` to re-register the manifest
 - Requires **Word 2016+** or **Microsoft 365 Word**
 
-**Connection test fails**
+**Connection test fails / “Failed to fetch”**
 
 - Verify base URL, API key, and model name
-- Check gateway CORS headers if calling a remote proxy from the task pane
+- Check router logs for `OPTIONS` returning **405** — see [CORS and local routers](#cors-and-local-routers) above
 - Try the same request with `curl` against your endpoint
 
 **Context shows "No text selected"**
