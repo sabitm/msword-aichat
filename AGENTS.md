@@ -12,7 +12,7 @@ Build a **Microsoft Word task-pane add-in** that provides:
 
 Phase 5 delivers conversation persistence, custom instructions, slash commands, `insert_comment`, and a dev CORS proxy. Remaining backlog items are optional future work.
 
-**Minimum supported host:** Word 2016+ or Microsoft 365 Word (not Office 2013).
+**Minimum supported host:** Microsoft 365 or Office 2019+ with WebView2 on Windows; Word 2016 desktop (IE WebView) is not supported for this React/Vite stack.
 
 ---
 
