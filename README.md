@@ -52,11 +52,24 @@ A Microsoft Word task-pane add-in that brings AI chat and agentic document editi
 # Install dependencies
 npm install
 
+# Windows: trust localhost dev cert (once, elevated PowerShell)
+npm run certs
+
 # Start the HTTPS dev server (required by Office add-ins)
 npm run dev
 ```
 
 The dev server runs at **https://localhost:3000**.
+
+### Word 2016 (IE11) — `ie11-rewrite` branch
+
+Office 2016 on Windows uses **IE11** for task panes. Use the **`ie11-rewrite`** branch:
+
+- **Webpack** + **React 16** + **ES5** bundle (no Vite ESM)
+- `npm run dev` serves `taskpane.bundle.js` for IE11
+- Phase **IE-0** shows a proof-of-life screen (“IE11 host OK”) before the full UI port
+
+Modern stack (`dev:modern` / Vite / React 19) remains in repo for reference until IE-5.
 
 ### Sideload in Word (Desktop)
 

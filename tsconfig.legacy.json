@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ES5",
+    "lib": ["ES5", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "node",
+    "jsx": "react",
+    "strict": true,
+    "noEmit": true,
+    "types": ["office-js"]
+  },
+  "include": ["src/polyfills.ts", "src/taskpane/main.legacy.tsx", "src/taskpane/App.legacy.tsx"]
+}
