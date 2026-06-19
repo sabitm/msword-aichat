@@ -13,7 +13,7 @@ export function buildAgentSystemPrompt(
     "- For edits, use replace_text when changing selected text and insert_text for new content.",
     "- Use search_document to find text before editing long documents.",
     "- Use delete_range to remove selected text, apply_style for headings, format_range for bold/italic/size.",
-    "- Use insert_table for tabular data (rows 1-20, columns 1-10).",
+    "- Use insert_table for tabular data (rows 1-20, columns 1-10). Pass the complete cells 2D array in one call.",
     "- Use insert_comment to add Word review comments on the current selection.",
     `- Supported styles: ${DOCUMENT_STYLES.join(", ")}.`,
     "- Edits are staged for user approval unless auto-apply is enabled.",

@@ -22,6 +22,11 @@ function wrapWordError(error: unknown, fallback: string): never {
       "The document is locked or being co-edited. Try again when the section is available.",
     );
   }
+  if (/itemnotfound/i.test(message)) {
+    throw new WordOperationError(
+      "Word could not find the table cell to update. Try the request again or insert the table at the document end.",
+    );
+  }
   throw new WordOperationError(message);
 }
 
@@ -259,26 +264,22 @@ export async function insertTableAtBookmark(
     await Word.run(async (context) => {
       const range = context.document.getBookmarkRange(bookmark);
       const table = range.insertTable(rows, columns, Word.InsertLocation.after);
-      table.load("rows");
-      await context.sync();
 
       if (cellValues?.length) {
+        // Use getCell + one final sync — rows.items/col indexing without loading
+        // items first throws ItemNotFound on Word 2016 desktop.
         for (let rowIndex = 0; rowIndex < Math.min(rows, cellValues.length); rowIndex += 1) {
-          const row = table.rows.items[rowIndex];
-          row.load("cells");
-          await context.sync();
           const rowValues = cellValues[rowIndex] ?? [];
-          for (
-            let colIndex = 0;
-            colIndex < Math.min(columns, rowValues.length);
-            colIndex += 1
-          ) {
-            const cell = row.cells.items[colIndex];
-            cell.body.insertText(rowValues[colIndex] ?? "", Word.InsertLocation.replace);
+          for (let colIndex = 0; colIndex < Math.min(columns, rowValues.length); colIndex += 1) {
+            const value = rowValues[colIndex] ?? "";
+            if (!value) continue;
+            const cell = table.getCell(rowIndex, colIndex);
+            cell.body.insertText(value, Word.InsertLocation.replace);
           }
         }
-        await context.sync();
       }
+
+      await context.sync();
     });
   } catch (error) {
     wrapWordError(error, "Failed to insert table.");

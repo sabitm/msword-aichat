@@ -15,7 +15,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     name: "table",
     description: "Insert a structured table",
     prompt:
-      "Create a well-structured table for the described data. Use insert_table at the selection or end of the document.",
+      "Create a well-structured table for the described data. Call insert_table once with rows, columns, and the full cells 2D array (including headers). Do not insert an empty table and fill cells in a follow-up step.",
   },
   {
     name: "toc",
