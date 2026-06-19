@@ -122,20 +122,26 @@ export async function searchDocument(
       const matches: SearchMatch[] = [];
       const limit = Math.min(results.items.length, maxResults);
 
+      const body = context.document.body;
+      body.load("text");
       for (let index = 0; index < limit; index += 1) {
-        const range = results.items[index];
-        range.load(["text", "start", "end"]);
+        results.items[index].load("text");
       }
       await context.sync();
 
+      const fullText = body.text ?? "";
+      let scanAt = 0;
+
       for (let index = 0; index < limit; index += 1) {
-        const range = results.items[index];
-        matches.push({
-          index,
-          text: range.text ?? "",
-          start: range.start,
-          end: range.end,
-        });
+        const text = results.items[index].text ?? "";
+        let start = -1;
+        if (text) {
+          start = fullText.indexOf(text, scanAt);
+          if (start < 0) start = fullText.indexOf(text);
+          if (start >= 0) scanAt = start + Math.max(text.length, 1);
+        }
+        const end = start >= 0 ? start + text.length : -1;
+        matches.push({ index, text, start, end });
       }
 
       return matches;
