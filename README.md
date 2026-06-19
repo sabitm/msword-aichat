@@ -152,6 +152,8 @@ On first launch, a **5-step onboarding wizard** walks you through setup. You can
 | `npm run package -- https://host/path` | Package with production manifest URLs filled in |
 | `npm run proxy` | Start local CORS proxy on port 8787 (see below) |
 | `npm run smoke` | Run automated smoke test (build, validate, dev server, contracts) |
+| `npm run certs` | Install trusted localhost dev certs (Windows — run terminal as Administrator) |
+| `npm run certs:verify` | Verify dev certificates are installed |
 
 ## Project structure
 
@@ -182,7 +184,7 @@ Word (Office.js)  ←→  Task Pane UI (React)
 ```
 
 - **UI:** React 19, Fluent UI v9, Zustand for settings
-- **Build:** Vite 7 with `@vitejs/plugin-basic-ssl` (HTTPS on port 3000)
+- **Build:** Vite 7 with HTTPS on port 3000 (`office-addin-dev-certs` on Windows/Mac)
 - **LLM:** Thin `fetch` + SSE adapters; no SDK dependency
 
 ## Security notes
@@ -194,7 +196,7 @@ Word (Office.js)  ←→  Task Pane UI (React)
 - Edits use internal bookmarks (`msword_aichat_*`) for stable apply; orphan bookmarks may remain in the document
 - **Undo** for `insert_table` removes the last table in the document (best-effort)
 - Custom endpoints must be reachable from the add-in runtime (watch CORS if not using a same-origin proxy)
-- Use HTTPS endpoints in production; the dev server uses a self-signed certificate
+- Use HTTPS endpoints in production; local dev uses trusted localhost certs after `npm run certs`
 
 ## Distribution
 
@@ -236,10 +238,22 @@ Manual smoke test in Word on the web before org-wide rollout:
 
 ## Troubleshooting
 
+**Certificate error / "content is blocked" (Word task pane)**
+
+Word uses its own embedded browser and does **not** trust Vite's default self-signed certificate. Install Microsoft's dev certs once:
+
+1. Open **PowerShell or Command Prompt as Administrator**
+2. In the project folder: `npm install` then `npm run certs`
+3. Stop and restart `npm run dev`
+4. Close Word completely, then run `npm start` again
+5. Open `https://localhost:3000/taskpane.html` in **Edge** (or IE on older setups) and confirm it loads without a cert warning
+
+`npm run certs:verify` should report the certificate is valid. The dev server prefers `office-addin-dev-certs` over the basic-ssl fallback.
+
 **Add-in does not load**
 
 - Confirm `npm run dev` is running and reachable at `https://localhost:3000`
-- Accept the self-signed certificate warning in your browser once
+- Complete the certificate steps above on Windows before sideloading
 - Re-run `npm start` to re-register the manifest
 - Requires **Word 2016+** or **Microsoft 365 Word**
 
