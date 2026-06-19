@@ -95,6 +95,8 @@ export interface AgentRunResult {
   steps: AgentStep[];
   pendingEdit?: PendingEdit;
   error?: string;
+  /** Assistant + tool messages produced during this run (for Anthropic multi-turn replay). */
+  transcript?: AgentMessage[];
 }
 
 export const MAX_AGENT_STEPS = 10;

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { buildAgentHistoryFromUi } from "../agent/history";
 import { runAgent } from "../agent/orchestrator";
 import {
   appendCustomInstructions,
@@ -33,6 +34,7 @@ export interface UiMessage {
   error?: string;
   steps?: AgentStep[];
   pendingEdit?: PendingEdit;
+  agentTranscript?: AgentMessage[];
 }
 
 function createId(): string {
@@ -138,10 +140,7 @@ export function useChat(contextMode: ContextMode, docKey: string) {
               role: "system",
               content: buildAgentSystemPrompt(contextBlock, promptOptions),
             },
-            ...messages.map((message) => ({
-              role: message.role,
-              content: message.content,
-            })),
+            ...buildAgentHistoryFromUi(messages),
             { role: "user", content: promptText },
           ];
 
@@ -169,6 +168,7 @@ export function useChat(contextMode: ContextMode, docKey: string) {
             content: result.text,
             steps: result.steps,
             pendingEdit: result.pendingEdit,
+            agentTranscript: result.transcript,
             isStreaming: false,
             error: result.error,
           });

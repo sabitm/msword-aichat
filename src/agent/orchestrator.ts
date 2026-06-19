@@ -18,6 +18,35 @@ function serializeToolOutput(output: Record<string, unknown>): string {
   return JSON.stringify(output);
 }
 
+function buildTurnTranscript(
+  loopMessages: AgentMessage[],
+  turnStartIndex: number,
+  finalText: string,
+): AgentMessage[] {
+  const transcript = loopMessages.slice(turnStartIndex);
+
+  if (!finalText.trim()) {
+    return transcript;
+  }
+
+  const last = transcript[transcript.length - 1];
+  if (!last) {
+    transcript.push({ role: "assistant", content: finalText });
+    return transcript;
+  }
+
+  if (last.role === "tool" || (last.role === "assistant" && last.toolCalls?.length)) {
+    transcript.push({ role: "assistant", content: finalText });
+    return transcript;
+  }
+
+  if (last.role === "assistant" && !last.content.trim()) {
+    last.content = finalText;
+  }
+
+  return transcript;
+}
+
 export async function runAgent(options: {
   config: ProviderConfig;
   messages: AgentMessage[];
@@ -26,6 +55,7 @@ export async function runAgent(options: {
 }): Promise<AgentRunResult> {
   const provider = createProvider(options.config);
   const loopMessages = [...options.messages];
+  const turnStartIndex = loopMessages.length;
   const steps: AgentStep[] = [];
   let pendingEdit: PendingEdit | undefined;
   let finalText = "";
@@ -49,6 +79,7 @@ export async function runAgent(options: {
         steps,
         pendingEdit,
         error: completion.error ?? "Agent request failed",
+        transcript: buildTurnTranscript(loopMessages, turnStartIndex, finalText),
       };
     }
 
@@ -63,7 +94,12 @@ export async function runAgent(options: {
     }
 
     if (completion.toolCalls.length === 0 || completion.stopReason === "end") {
-      return { text: finalText, steps, pendingEdit };
+      return {
+        text: finalText,
+        steps,
+        pendingEdit,
+        transcript: buildTurnTranscript(loopMessages, turnStartIndex, finalText),
+      };
     }
 
     loopMessages.push({
@@ -124,6 +160,7 @@ export async function runAgent(options: {
             "I prepared a document edit. Review the preview below and click Apply or Reject.",
           steps,
           pendingEdit,
+          transcript: buildTurnTranscript(loopMessages, turnStartIndex, finalText),
         };
       }
 
@@ -133,6 +170,7 @@ export async function runAgent(options: {
           steps,
           pendingEdit,
           error: result.error,
+          transcript: buildTurnTranscript(loopMessages, turnStartIndex, finalText),
         };
       }
     }
@@ -143,5 +181,6 @@ export async function runAgent(options: {
     steps,
     pendingEdit,
     error: "Maximum agent steps reached",
+    transcript: buildTurnTranscript(loopMessages, turnStartIndex, finalText),
   };
 }

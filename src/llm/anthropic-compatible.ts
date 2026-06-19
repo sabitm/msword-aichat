@@ -33,23 +33,34 @@ export class AnthropicCompatibleProvider implements LLMProvider {
 
   private toAnthropicMessages(messages: AgentMessage[]) {
     const result: Array<Record<string, unknown>> = [];
+    let pendingToolResults: Array<Record<string, unknown>> | null = null;
+
+    const flushToolResults = () => {
+      if (pendingToolResults?.length) {
+        result.push({
+          role: "user",
+          content: pendingToolResults,
+        });
+        pendingToolResults = null;
+      }
+    };
 
     for (const message of messages) {
       if (message.role === "system") continue;
 
       if (message.role === "tool") {
-        result.push({
-          role: "user",
-          content: [
-            {
-              type: "tool_result",
-              tool_use_id: message.toolCallId,
-              content: message.content,
-            },
-          ],
+        if (!pendingToolResults) {
+          pendingToolResults = [];
+        }
+        pendingToolResults.push({
+          type: "tool_result",
+          tool_use_id: message.toolCallId,
+          content: message.content,
         });
         continue;
       }
+
+      flushToolResults();
 
       if (message.role === "assistant" && message.toolCalls?.length) {
         const content: Array<Record<string, unknown>> = [];
@@ -74,6 +85,7 @@ export class AnthropicCompatibleProvider implements LLMProvider {
       });
     }
 
+    flushToolResults();
     return result;
   }
 

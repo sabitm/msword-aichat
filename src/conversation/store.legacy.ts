@@ -1,5 +1,5 @@
 import type { UiMessage } from "../hooks/useChat.legacy";
-import type { AgentStep, PendingEdit } from "../types/agent";
+import type { AgentMessage, AgentStep, PendingEdit } from "../types/agent";
 
 var STORAGE_PREFIX = "msword-aichat:conversation:";
 var MAX_STORED_MESSAGES = 80;
@@ -11,6 +11,7 @@ interface StoredMessage {
   error?: string;
   steps?: AgentStep[];
   pendingEdit?: PendingEdit;
+  agentTranscript?: AgentMessage[];
 }
 
 function storageKey(docKey: string): string {
@@ -45,6 +46,7 @@ function toStored(messages: UiMessage[]): StoredMessage[] {
         error: message.error,
         steps: message.steps,
         pendingEdit: serializePendingEdit(message.pendingEdit),
+        agentTranscript: message.agentTranscript,
       };
     });
 }
@@ -58,6 +60,7 @@ function fromStored(stored: StoredMessage[]): UiMessage[] {
       error: message.error,
       steps: message.steps,
       pendingEdit: message.pendingEdit,
+      agentTranscript: message.agentTranscript,
     };
   });
 }
