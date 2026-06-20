@@ -12,41 +12,41 @@ Build a **Microsoft Word task-pane add-in** that provides:
 
 Phase 5 delivers conversation persistence, custom instructions, slash commands, `insert_comment`, and a dev CORS proxy. Remaining backlog items are optional future work.
 
-**Minimum supported host:** Microsoft 365 or Office 2019+ with WebView2 on Windows; Word 2016 desktop (IE WebView) is not supported for this React/Vite stack.
+**Minimum supported host (branch `ie11-rewrite`):** Word **2016 Windows** (IE11 task pane). Also runs on Office 2019+ / M365 (WebView2) and Word on the web. Built with Webpack + React 16 + Fluent UI v8 + ES5.
 
 ---
 
-## Current state (Phase 5 — complete)
+## Current state (IE rewrite on `ie11-rewrite` — ship-ready)
 
 | Area | Implemented | Location |
 |------|-------------|----------|
 | Office add-in manifest | Yes | `manifest.xml` (dev), `manifest.prod.xml` (deploy) |
-| Vite + React + TypeScript shell | Yes | `taskpane.html`, `src/taskpane/` |
-| Provider settings UI | Yes | `src/taskpane/components/SettingsPanel.tsx` |
-| First-run onboarding | Yes | `src/taskpane/components/OnboardingWizard.tsx` |
-| Settings persistence | Yes | `src/settings/store.ts` |
+| Webpack + React 16 + Fluent v8 shell | Yes | `webpack.config.cjs`, `src/taskpane/main.legacy.tsx`, `components.legacy/` |
+| Provider settings UI | Yes | `src/taskpane/components.legacy/SettingsPanel.tsx` |
+| Settings persistence | Yes | `src/settings/store.legacy.ts` |
 | Model list fetch (`/models`) | Yes | `src/llm/models.ts` |
-| OpenAI-compatible adapter + tools | Yes | `src/llm/openai-compatible.ts` |
-| Anthropic-compatible adapter + tools | Yes | `src/llm/anthropic-compatible.ts` |
-| Chat mode (streaming) | Yes | `src/hooks/useChat.ts` |
+| OpenAI-compatible adapter + tools | Yes | `src/llm/openai-compatible.ts`, XHR SSE via `sse-reader.ts` |
+| Anthropic-compatible adapter + tools | Yes | `src/llm/anthropic-compatible.ts`, agent transcript replay |
+| Chat mode (streaming) | Yes | `src/hooks/useChat.legacy.ts` |
 | Agent mode (tool loop) | Yes | `src/agent/orchestrator.ts` |
-| Document tools (10 total) | Yes | `src/agent/tools/registry.ts` |
-| Per-document conversation store | Yes | `src/conversation/store.ts`, `useDocumentKey` |
+| Agent tools (12 total) | Yes | `src/agent/tools/registry.ts` |
+| Per-document conversation store | Yes | `src/conversation/store.legacy.ts`, `useDocumentKey.legacy.ts` |
 | Custom instructions / review mode | Yes | `src/settings/defaults.ts`, `prompt-options.ts` |
-| Slash commands | Yes | `src/agent/slash-commands.ts`, `MessageInput.tsx` |
+| Slash commands + hints | Yes | `src/agent/slash-commands.ts`, `MessageInput.legacy.tsx` |
 | `insert_comment` tool | Yes | `src/word/operations.ts`, registry |
+| `list_tables` / `update_table` | Yes | `src/word/operations.ts`, registry (in-place table edits) |
 | Dev CORS proxy | Yes | `proxy/dev-proxy.mjs` |
-| Remote telemetry POST | Yes | `src/telemetry/index.ts` |
 | Word operations | Yes | `src/word/operations.ts` |
 | Range bookmarks (stable apply) | Yes | `src/word/ranges.ts` |
 | Undo snapshots | Yes | `src/word/undo.ts` |
-| Edit preview + Undo UI | Yes | `EditPreview.tsx` |
-| Error retry + copy | Yes | `ErrorActions.tsx`, `useChat.retryMessage` |
+| Edit preview + Undo UI | Yes | `components.legacy/EditPreview.tsx` |
+| Error retry + copy | Yes | `ErrorActions.tsx`, `useChat.legacy` retry |
 | Agent step trace | Yes | `AgentTrace.tsx` |
 | Word context (selection, outline) | Yes | `src/word/context.ts` |
 | Distribution package script | Yes | `scripts/package-addin.mjs` |
-| Opt-in telemetry stub | Yes | `src/telemetry/index.ts` |
-| Vite code-splitting | Yes | `vite.config.ts` (fluent + react chunks) |
+| Automated smoke test | Yes | `scripts/smoke-test.mjs` |
+
+**Legacy build skips:** onboarding wizard, telemetry, Vite/React 19/Fluent v9 UI path.
 
 ---
 
@@ -66,10 +66,10 @@ src/
 │   └── factory.ts
 ├── settings/
 │   ├── defaults.ts           # Provider config + AppPreferences
-│   └── store.ts
+│   └── store.legacy.ts       # Pub/sub settings (IE-safe)
 ├── hooks/
-│   ├── useChat.ts            # Chat + agent modes, apply/reject edits
-│   └── useDocumentContext.ts
+│   ├── useChat.legacy.ts     # Chat + agent modes, apply/reject edits
+│   └── useDocumentContext.legacy.ts
 ├── word/
 │   ├── context.ts            # Selection, outline, chunking
 │   ├── operations.ts         # search, styles, format, table
@@ -80,7 +80,9 @@ src/
 │   ├── context.ts
 │   └── agent.ts
 └── taskpane/
-    └── components/
+    ├── App.legacy.tsx
+    ├── main.legacy.tsx
+    └── components.legacy/    # Fluent v8 UI (IeSelect for IE11 dropdowns)
         ├── ModeBar.tsx
         ├── ContextBar.tsx
         ├── AgentTrace.tsx
@@ -99,7 +101,7 @@ flowchart TB
         DOC[(Document)]
     end
 
-    subgraph Addin["Task Pane (React)"]
+    subgraph Addin["Task Pane (React 16 + Fluent v8)"]
         UI[Chat / Settings UI]
         CTX[Context Builder]
         AGT[Agent Orchestrator]
@@ -125,9 +127,9 @@ flowchart TB
     CFG --> PROV
 ```
 
-**Chat mode:** `MessageInput` → `useChat` → `createProvider().chat()` → SSE stream → `MessageList`.
+**Chat mode:** `MessageInput.legacy` → `useChat.legacy` → `createProvider().chat()` → SSE stream (XHR on IE11) → `MessageList`.
 
-**Agent mode:** `MessageInput` → `useChat` → `runAgent()` → `provider.complete()` with tools → `executeTool()` → optional `PendingEdit` → `EditPreview` → `applyPendingEdit()`.
+**Agent mode:** `MessageInput.legacy` → `useChat.legacy` → `runAgent()` → `provider.complete()` with tools → `executeTool()` → optional `PendingEdit` → `EditPreview` → `applyPendingEdit()`.
 
 ---
 
@@ -135,9 +137,10 @@ flowchart TB
 
 ### Office add-in runtime
 
-- Dev server **must** use **HTTPS** on **port 3000** (see `vite.config.ts`, `manifest.xml`)
-- Entry point: `taskpane.html` → `src/taskpane/main.tsx`
-- Initialize with `Office.onReady()` before rendering (already in `main.tsx`)
+- Dev server **must** use **HTTPS** on **port 3000** (see `webpack.config.cjs`, `manifest.xml`)
+- Entry point: `taskpane.html` (webpack output) → `src/taskpane/main.legacy.tsx`
+- Initialize with `Office.onReady()` before rendering (already in `main.legacy.tsx`)
+- Webpack dev server: `hot: false`, `client.overlay: false` (IE11 dev overlay noise)
 - Manifest host: `Document` (Word only). Do not broaden hosts without explicit request
 - Permissions: `ReadWriteDocument` — required for future edit tools
 
@@ -160,12 +163,13 @@ flowchart TB
 - Non-secret config: `localStorage` key `msword-aichat:provider-config`
 - API key: separate key `msword-aichat:api-key`
 - Never commit API keys, `.env` secrets, or real endpoints
-- `useSettingsStore.getConfig()` is the canonical way to read runtime config
+- `settingsStore.getConfig()` from `src/settings/store.legacy.ts` is the canonical way to read runtime config
 
 ### UI
 
-- Use **Fluent UI React v9** (`@fluentui/react-components`) for controls
-- Match existing patterns in `SettingsPanel.tsx` and `Header.tsx`
+- Use **Fluent UI React v8** (`@fluentui/react`) for controls
+- Use native `<select>` via `IeSelect.tsx` on IE11 — avoid Fluent `Dropdown` / `CommandBar` overflow in the task pane
+- Match existing patterns in `components.legacy/SettingsPanel.tsx` and `Header.tsx`
 - Keep task-pane layout vertical: toolbar → scrollable body → input bar
 
 ---
@@ -187,6 +191,10 @@ Delivered: `search_document`, `delete_range`, `apply_style`, `format_range`, `in
 **Known limitations:**
 - Bookmark deletion is not exposed by Word JS API; `msword_aichat_*` bookmarks may remain.
 - `insert_table` undo deletes the last document table (best-effort).
+- `update_table` requires matching rows/columns; resizes are not supported yet.
+- `replace_text` is blocked when the selection is inside a table — use `update_table`.
+- `search_document` must not load `range.start`/`end` on Word 2016; positions are estimated from `body.text`.
+- Table cell writes use `table.values` after `context.sync()` (Word 2016–safe).
 
 ### Phase 4 — Polish & ship (complete)
 
@@ -224,8 +232,11 @@ Delivered: per-document conversation persistence, custom instructions, review mo
 
 - Return small previews, not full document bodies
 - Never throw uncaught errors — return `{ success: false, error: "..." }`
-- Idempotent where possible; prefer `replace_text` with explicit range IDs
+- Idempotent where possible; prefer `replace_text` with explicit range IDs for plain text only
+- **Tables:** `insert_table` creates; `list_tables` + `update_table` edits in place; never `replace_text` on table selections
 - Log each step for the agent trace panel
+
+**Registered agent tools (12):** `get_selection`, `get_document_text`, `search_document`, `list_tables`, `insert_text`, `replace_text`, `delete_range`, `apply_style`, `format_range`, `insert_table`, `update_table`, `insert_comment`.
 
 ---
 
@@ -235,8 +246,8 @@ Delivered: per-document conversation persistence, custom instructions, review mo
 |-------|------------|
 | Language | TypeScript strict mode |
 | Imports | Relative paths within `src/` |
-| State | Zustand for global settings; React `useState` for ephemeral chat UI |
-| Styling | Fluent `makeStyles` for components; `index.css` for layout shell only |
+| State | `settingsStore` pub/sub (`store.legacy.ts`); React `useState` for ephemeral chat UI |
+| Styling | Fluent v8 `mergeStyles` / layout classes; `index.css` for shell only |
 | Async | `async/await`; streaming via `AsyncIterable<ChatEvent>` |
 | Errors | Surface user-readable messages in UI; no silent failures |
 | File naming | kebab-case files, PascalCase React components |
@@ -288,8 +299,10 @@ npm run smoke        # automated smoke test pass
 | Pitfall | Guidance |
 |---------|----------|
 | Calling LLM SDKs | Use existing adapters in `src/llm/` |
-| Duplicate `useChat` instances | Single owner in `App.tsx`; pass props to `ChatPanel` |
-| HTTP dev server | Office requires HTTPS — keep `basicSsl` plugin |
+| Duplicate `useChat` instances | Single owner in `App.legacy.tsx`; pass props to `ChatPanel` |
+| HTTP dev server | Office requires HTTPS — use `office-addin-dev-certs` via webpack-dev-server |
+| Table edits via `replace_text` | Word `GeneralException` — use `update_table`; guard in `executeReplaceText` |
+| IE11 dropdown white screen | Use `IeSelect`, not Fluent `Dropdown` / CommandBar overflow |
 | Wrong icon paths | Icons live in `public/assets/` → served as `/assets/icon-*.png` |
 | Manifest version | Must be `>= 1.0.0.0` (see `manifest.xml`) |
 | Huge prompts | Phase 1 must chunk/bound context; never dump full doc by default |
@@ -303,9 +316,10 @@ When starting a task, read these before editing:
 
 1. `src/types/llm.ts` — core types
 2. `src/llm/provider.ts` — provider contract
-3. `src/settings/store.ts` — config access pattern
-4. `src/hooks/useChat.ts` — chat flow (will integrate agent in Phase 2)
-5. `src/taskpane/App.tsx` — top-level composition
+3. `src/settings/store.legacy.ts` — config access pattern
+4. `src/hooks/useChat.legacy.ts` — chat + agent flow
+5. `src/taskpane/App.legacy.tsx` — top-level composition
+6. `src/word/operations.ts` — table/search helpers (`table.values`, `list_tables`, `update_table`)
 6. `manifest.xml` — Office host capabilities and URLs
 
 ---

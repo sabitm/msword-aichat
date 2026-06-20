@@ -11,7 +11,7 @@ Built for **Word 2016 Windows** (IE11 task pane) and also runs on **Office 2019+
 - Connection test against your configured endpoint
 - **Chat mode** — streaming responses with optional document context
 - **Agent mode** — multi-step tool loop with document read/write tools
-- **Document tools (10):** `get_selection`, `get_document_text`, `search_document`, `insert_text`, `replace_text`, `delete_range`, `apply_style`, `format_range`, `insert_table`, `insert_comment`
+- **Agent tools (12):** `get_selection`, `get_document_text`, `search_document`, `list_tables`, `insert_text`, `replace_text`, `delete_range`, `apply_style`, `format_range`, `insert_table`, `update_table`, `insert_comment`
 - **Slash commands:** `/fix`, `/table`, `/toc`, `/summarize`, `/formal`, `/comment`
 - **Custom instructions** — persistent persona/rules in Settings
 - **Per-document conversations** — chat history keyed by document URL (toggle in Settings)
@@ -87,15 +87,17 @@ The agent can call tools to read and edit the document:
 
 | Tool | Description |
 |------|-------------|
-| `get_selection` | Read the current selection |
+| `get_selection` | Read the current selection (`inTable` hint when cursor is inside a table) |
 | `get_document_text` | Read a chunk of body text (`start`, `max_chars`) |
+| `search_document` | Find text occurrences with match text and estimated positions |
+| `list_tables` | List document tables with index, size, values, and preview |
 | `insert_text` | Insert text at selection or end of document |
-| `replace_text` | Replace the current selection (bookmark-captured range) |
+| `replace_text` | Replace selected **plain text** (not tables — use `update_table`) |
 | `delete_range` | Delete the current selection |
-| `search_document` | Find text occurrences with positions |
 | `apply_style` | Apply Normal, Heading1–3, Title, or Subtitle |
 | `format_range` | Bold, italic, or font size on selection |
-| `insert_table` | Insert a table (up to 20×10) after selection |
+| `insert_table` | Insert a new table (up to 20×10) after selection or document end |
+| `update_table` | Replace an existing table **in place** via full `cells` grid (same rows/columns) |
 | `insert_comment` | Add a Word review comment on the selection (immediate) |
 
 **Edit flow (default):** mutation tools stage a before/after preview. Click **Apply** to write to Word, **Reject** to discard, or **Undo** after applying.
@@ -109,6 +111,20 @@ Enable **Auto-apply document edits** in Settings to skip the preview.
 3. Send: `Rewrite this in a formal tone`
 4. Review the agent steps and edit preview
 5. Click **Apply**
+
+### Example: create or edit a table
+
+**New table** — agent calls `insert_table` once with `rows`, `columns`, and the full `cells` 2D array (including headers). Shortcut: `/table …` in the message box.
+
+**Edit existing table in place** — agent calls `list_tables` (when multiple tables exist), then `update_table` with the same dimensions and a full replacement `cells` grid. Do **not** use `replace_text` on a table selection; Word will error.
+
+Example follow-up after a months/days table exists:
+
+```
+edit the table column from number of days into the number of public holidays in usa
+```
+
+Expected flow: `list_tables` → `update_table` with `table_index`, matching `rows`/`columns`, and updated `cells`.
 
 ### Document context bar
 
@@ -198,6 +214,8 @@ Word (Office.js)  ←→  Task Pane UI (React 16 + Fluent v8)
 - Context is truncated at ~12,000 characters to limit prompt size
 - Edits use internal bookmarks (`msword_aichat_*`) for stable apply; orphan bookmarks may remain in the document
 - **Undo** for `insert_table` removes the last table in the document (best-effort)
+- **Undo** for `update_table` restores the previous cell contents at the same table index
+- **`replace_text` on table selections** is blocked; use `update_table` for table edits
 - Custom endpoints must be reachable from the add-in runtime (watch CORS if not using a same-origin proxy)
 - Use HTTPS endpoints in production; local dev uses trusted localhost certs after `npm run certs`
 
@@ -251,10 +269,11 @@ Manual smoke test on **Word 2016 desktop** before org-wide rollout:
 | 6 | Agent `get_selection` | |
 | 7 | `replace_text` preview → Apply → Undo | |
 | 8 | `insert_comment` | |
-| 9 | `insert_table` | |
-| 10 | Slash `/fix` | |
-| 11 | Conversation persists per document | |
-| 12 | Retry / copy on error | |
+| 9 | `insert_table` with filled cells | |
+| 10 | `update_table` in place (no duplicate table) | |
+| 11 | Slash `/fix` and `/table` | |
+| 12 | Conversation persists per document | |
+| 13 | Retry / copy on error | |
 
 ## Word on the web QA checklist
 
@@ -268,7 +287,7 @@ Regression test in Word on the web after Word 2016 sign-off:
 | Agent | Run a read-only tool (`get_selection`) |
 | Edits | `replace_text` preview → Apply → Undo |
 | Styles | `apply_style` on a heading |
-| Tables | `insert_table` with 2×2 data |
+| Tables | `insert_table` with 2×2 data; `update_table` changes header/values in place |
 | Search | `search_document` returns matches |
 | Errors | Retry and Copy on a failed request |
 
@@ -316,6 +335,12 @@ Word uses its own embedded browser and does **not** trust self-signed certificat
 **Context shows "No text selected"**
 
 - Highlight text in the document, then click the refresh button in the context bar
+
+**Table edit fails or creates a duplicate table**
+
+- The agent should use `update_table`, not `insert_table` or `replace_text`, when changing an existing table.
+- If the document has multiple tables, the agent should call `list_tables` and pass the correct `table_index`.
+- Selecting the whole table and using `replace_text` is blocked (Word `GeneralException`); click inside the table and ask for an in-place update, or start a **New chat** so the agent picks up current tool guidance.
 
 **Manifest validation**
 
