@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 import { getRuntimeRoot } from "./runtime-root.mjs";
 
 var PORT = Number(process.env.MSWORD_AICHAT_PORT || 3000);
+var HOST = process.env.MSWORD_AICHAT_HOST || "127.0.0.1";
 var runtimeRoot = getRuntimeRoot();
 var appRoot = process.env.MSWORD_AICHAT_APP_DIR || join(runtimeRoot, "app");
 if (!existsSync(appRoot)) {
@@ -41,39 +42,40 @@ function resolveFilePath(urlPath) {
   return filePath;
 }
 
-async function getHttpsOptions() {
-  try {
-    var modulePath = await import("node:module");
-    var require = modulePath.createRequire(join(runtimeRoot, "package.json"));
-    var devCerts = require("office-addin-dev-certs");
-    return await devCerts.getHttpsServerOptions();
-  } catch (_moduleError) {
-    var certDir = process.env.OFFICE_ADDIN_CERT_DIR || join(homedir(), ".office-addin-dev-certs");
-    var keyPath = join(certDir, "localhost.key");
-    var certPath = join(certDir, "localhost.crt");
-    if (existsSync(keyPath) && existsSync(certPath)) {
-      return {
-        key: readFileSync(keyPath),
-        cert: readFileSync(certPath),
-      };
-    }
+function loadHttpsOptionsFromDisk() {
+  var certDir = process.env.OFFICE_ADDIN_CERT_DIR || join(homedir(), ".office-addin-dev-certs");
+  var keyPath = join(certDir, "localhost.key");
+  var certPath = join(certDir, "localhost.crt");
+  if (!existsSync(keyPath) || !existsSync(certPath)) {
     throw new Error(
       "HTTPS certificates not found. Run Install-certificate.bat as Administrator once, then retry.",
     );
   }
+  return {
+    key: readFileSync(keyPath),
+    cert: readFileSync(certPath),
+  };
+}
+
+function getHttpsOptions() {
+  return loadHttpsOptionsFromDisk();
 }
 
 function sendFile(filePath, res) {
   var stream = createReadStream(filePath);
   stream.on("error", function () {
-    res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+    if (!res.headersSent) {
+      res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+    }
     res.end("Failed to read file.");
   });
-  res.writeHead(200, {
-    "Content-Type": resolveContentType(filePath),
-    "Access-Control-Allow-Origin": "*",
+  stream.on("open", function () {
+    res.writeHead(200, {
+      "Content-Type": resolveContentType(filePath),
+      "Access-Control-Allow-Origin": "*",
+    });
+    stream.pipe(res);
   });
-  stream.pipe(res);
 }
 
 async function main() {
@@ -82,8 +84,8 @@ async function main() {
     process.exit(1);
   }
 
-  var httpsOptions = await getHttpsOptions();
-  var server = createServer(function (req, res) {
+  var httpsOptions = getHttpsOptions();
+  var server = createServer(httpsOptions, function (req, res) {
     if (req.method === "OPTIONS") {
       res.writeHead(204, {
         "Access-Control-Allow-Origin": "*",
@@ -119,10 +121,11 @@ async function main() {
     sendFile(filePath, res);
   });
 
-  server.listen(PORT, "localhost", function () {
+  server.listen(PORT, HOST, function () {
     console.log("");
     console.log("Word AI Chat local server running");
     console.log("  https://localhost:" + PORT + "/taskpane.html");
+    console.log("  (bound to " + HOST + ":" + PORT + ")");
     console.log("");
     console.log("Keep this window open while using Word.");
     console.log("Press Ctrl+C to stop.");
