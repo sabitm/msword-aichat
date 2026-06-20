@@ -7,7 +7,6 @@ import {
   Slider,
   Spinner,
   SpinnerSize,
-  Text,
   TextField,
 } from "@fluentui/react";
 import * as React from "react";
@@ -100,13 +99,11 @@ export function SettingsPanel(): React.ReactElement {
 
   return (
     <div className="settings-form">
-      <Text variant="xLarge" block>
-        AI Provider
-      </Text>
-      <Text variant="medium" block>
+      <h2 className="settings-section-title">AI Provider</h2>
+      <p className="settings-section-desc">
         Connect to any OpenAI or Anthropic-compatible endpoint. API keys are stored locally on this
         device.
-      </Text>
+      </p>
 
       <IeSelect
         label="Provider type"
@@ -155,9 +152,7 @@ export function SettingsPanel(): React.ReactElement {
         />
       )}
 
-      <Text variant="medium" block>
-        {"Max tokens: " + config.maxTokens}
-      </Text>
+      <p className="settings-slider-label">{"Max tokens: " + config.maxTokens}</p>
       <Slider
         min={256}
         max={8192}
@@ -169,9 +164,7 @@ export function SettingsPanel(): React.ReactElement {
         }}
       />
 
-      <Text variant="medium" block>
-        {"Temperature: " + config.temperature.toFixed(1)}
-      </Text>
+      <p className="settings-slider-label">{"Temperature: " + config.temperature.toFixed(1)}</p>
       <Slider
         min={0}
         max={2}
@@ -183,9 +176,7 @@ export function SettingsPanel(): React.ReactElement {
         }}
       />
 
-      <Text variant="large" block>
-        Instructions &amp; behavior
-      </Text>
+      <h2 className="settings-section-title">Instructions &amp; behavior</h2>
       <TextField
         label="Custom instructions"
         description="Appended to every chat and agent system prompt"
@@ -197,9 +188,7 @@ export function SettingsPanel(): React.ReactElement {
         }}
       />
 
-      <Text variant="large" block>
-        Agent behavior
-      </Text>
+      <h2 className="settings-section-title">Agent behavior</h2>
       <Checkbox
         checked={preferences.autoApplyEdits}
         onChange={function (_event, checked) {
@@ -207,9 +196,9 @@ export function SettingsPanel(): React.ReactElement {
         }}
         label="Auto-apply document edits without preview"
       />
-      <Text variant="small" block>
+      <p className="settings-hint">
         When off, insert and replace operations show a before/after preview with Apply and Reject.
-      </Text>
+      </p>
       <Checkbox
         checked={preferences.reviewModeAsComments}
         onChange={function (_event, checked) {
