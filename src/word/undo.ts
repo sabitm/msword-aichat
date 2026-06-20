@@ -1,6 +1,11 @@
 import type { UndoSnapshot } from "../types/agent";
 import { deleteBookmark, replaceBookmarkText } from "./ranges";
-import { applyStyleAtBookmark, formatAtBookmark, WordOperationError } from "./operations";
+import {
+  applyStyleAtBookmark,
+  formatAtBookmark,
+  restoreTableAtIndex,
+  WordOperationError,
+} from "./operations";
 
 export async function revertUndoSnapshot(snapshot: UndoSnapshot): Promise<void> {
   if (!snapshot.bookmark) {
@@ -27,6 +32,12 @@ export async function revertUndoSnapshot(snapshot: UndoSnapshot): Promise<void> 
       break;
     case "insert_table":
       await replaceBookmarkText(snapshot.bookmark, snapshot.previousText);
+      break;
+    case "update_table":
+      if (snapshot.tableIndex === undefined || !snapshot.previousTableValues) {
+        throw new WordOperationError("Cannot undo table update: snapshot is incomplete.");
+      }
+      await restoreTableAtIndex(snapshot.tableIndex, snapshot.previousTableValues);
       break;
     default: {
       const exhaustive: never = snapshot.kind;

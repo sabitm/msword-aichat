@@ -259,6 +259,25 @@ export async function insertCommentOnSelection(comment: string): Promise<void> {
   }
 }
 
+export interface DocumentTableInfo {
+  index: number;
+  rows: number;
+  columns: number;
+  values: string[][];
+  preview: string;
+}
+
+function cloneCellGrid(values: string[][]): string[][] {
+  return values.map((row) => row.slice());
+}
+
+function formatTablePreview(values: string[][], maxRows = 4): string {
+  if (!values.length) return "(empty table)";
+  const lines = values.slice(0, maxRows).map((row) => row.join(" | "));
+  if (values.length > maxRows) lines.push("...");
+  return lines.join("\n");
+}
+
 function normalizeCellGrid(
   cellValues: string[][] | undefined,
   rows: number,
@@ -301,5 +320,183 @@ export async function insertTableAtBookmark(
     });
   } catch (error) {
     wrapWordError(error, "Failed to insert table.");
+  }
+}
+
+export async function listDocumentTables(maxTables = 10): Promise<DocumentTableInfo[]> {
+  assertWordAvailable();
+  const limit = Math.min(20, Math.max(1, Math.floor(maxTables)));
+
+  try {
+    return await Word.run(async (context) => {
+      const tables = context.document.body.tables;
+      tables.load("items");
+      await context.sync();
+
+      const count = Math.min(tables.items.length, limit);
+      for (let index = 0; index < count; index += 1) {
+        tables.items[index].load("values");
+      }
+      await context.sync();
+
+      const infos: DocumentTableInfo[] = [];
+      for (let index = 0; index < count; index += 1) {
+        const values = (tables.items[index].values as string[][]) ?? [];
+        const rows = values.length;
+        const columns = rows > 0 ? (values[0]?.length ?? 0) : 0;
+        infos.push({
+          index,
+          rows,
+          columns,
+          values: cloneCellGrid(values),
+          preview: formatTablePreview(values),
+        });
+      }
+      return infos;
+    });
+  } catch (error) {
+    wrapWordError(error, "Failed to list tables.");
+  }
+}
+
+export async function resolveTableIndex(requested?: number): Promise<number> {
+  assertWordAvailable();
+
+  try {
+    return await Word.run(async (context) => {
+      const tables = context.document.body.tables;
+      tables.load("items");
+      const selection = context.document.getSelection();
+      const parentTable = selection.parentTableOrNullObject;
+      parentTable.load("isNullObject");
+      await context.sync();
+
+      if (tables.items.length === 0) {
+        throw new WordOperationError("No tables found in the document.");
+      }
+
+      if (requested !== undefined) {
+        const index = Math.floor(requested);
+        if (index < 0 || index >= tables.items.length) {
+          throw new WordOperationError(
+            `Table index ${index} is out of range (document has ${tables.items.length} table(s)).`,
+          );
+        }
+        return index;
+      }
+
+      if (!parentTable.isNullObject) {
+        for (let index = 0; index < tables.items.length; index += 1) {
+          if (tables.items[index] === parentTable) return index;
+        }
+      }
+
+      return 0;
+    });
+  } catch (error) {
+    wrapWordError(error, "Failed to resolve table.");
+  }
+}
+
+export async function readTableAtIndex(tableIndex: number): Promise<DocumentTableInfo> {
+  assertWordAvailable();
+
+  try {
+    return await Word.run(async (context) => {
+      const tables = context.document.body.tables;
+      tables.load("items");
+      await context.sync();
+
+      if (tableIndex < 0 || tableIndex >= tables.items.length) {
+        throw new WordOperationError(
+          `Table index ${tableIndex} is out of range (document has ${tables.items.length} table(s)).`,
+        );
+      }
+
+      const table = tables.items[tableIndex];
+      table.load("values");
+      await context.sync();
+
+      const values = (table.values as string[][]) ?? [];
+      const rows = values.length;
+      const columns = rows > 0 ? (values[0]?.length ?? 0) : 0;
+
+      return {
+        index: tableIndex,
+        rows,
+        columns,
+        values: cloneCellGrid(values),
+        preview: formatTablePreview(values),
+      };
+    });
+  } catch (error) {
+    wrapWordError(error, "Failed to read table.");
+  }
+}
+
+export async function updateTableAtIndex(
+  tableIndex: number,
+  rows: number,
+  columns: number,
+  cellValues: string[][],
+): Promise<void> {
+  assertWordAvailable();
+  const grid = normalizeCellGrid(cellValues, rows, columns);
+  if (!grid) {
+    throw new WordOperationError("cells 2D array is required for update_table.");
+  }
+
+  try {
+    await Word.run(async (context) => {
+      const tables = context.document.body.tables;
+      tables.load("items");
+      await context.sync();
+
+      if (tableIndex < 0 || tableIndex >= tables.items.length) {
+        throw new WordOperationError(
+          `Table index ${tableIndex} is out of range (document has ${tables.items.length} table(s)).`,
+        );
+      }
+
+      const table = tables.items[tableIndex];
+      table.load("values");
+      await context.sync();
+
+      const current = (table.values as string[][]) ?? [];
+      const currentRows = current.length;
+      const currentColumns = currentRows > 0 ? (current[0]?.length ?? 0) : 0;
+
+      if (currentRows !== rows || currentColumns !== columns) {
+        throw new WordOperationError(
+          `Table ${tableIndex} is ${currentRows}x${currentColumns}. Pass matching rows and columns.`,
+        );
+      }
+
+      table.values = grid;
+      await context.sync();
+    });
+  } catch (error) {
+    wrapWordError(error, "Failed to update table.");
+  }
+}
+
+export async function restoreTableAtIndex(tableIndex: number, values: string[][]): Promise<void> {
+  assertWordAvailable();
+
+  try {
+    await Word.run(async (context) => {
+      const tables = context.document.body.tables;
+      tables.load("items");
+      await context.sync();
+
+      if (tableIndex < 0 || tableIndex >= tables.items.length) {
+        throw new WordOperationError(`Cannot undo: table index ${tableIndex} no longer exists.`);
+      }
+
+      tables.items[tableIndex].values = cloneCellGrid(values);
+      await context.sync();
+    });
+  } catch (error) {
+    wrapWordError(error, "Failed to restore table.");
   }
 }

@@ -150,6 +150,8 @@ function checkToolRegistry() {
     "format_range",
     "insert_comment",
     "insert_table",
+    "list_tables",
+    "update_table",
   ];
 
   for (const tool of expectedTools) {

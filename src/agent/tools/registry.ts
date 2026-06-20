@@ -12,10 +12,14 @@ import {
   formatAtBookmark,
   insertCommentOnSelection,
   insertTableAtBookmark,
+  listDocumentTables,
   readBodyTextChunk,
   readSelectionPlain,
   readSelectionStyle,
+  readTableAtIndex,
+  resolveTableIndex,
   searchDocument,
+  updateTableAtIndex,
   WordOperationError,
 } from "../../word/operations";
 import {
@@ -198,6 +202,48 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: "list_tables",
+    description:
+      "List tables in the document with index, dimensions, cell values, and a short preview. Use before update_table when multiple tables exist.",
+    parameters: {
+      type: "object",
+      properties: {
+        max_tables: {
+          type: "number",
+          description: "Maximum tables to return. Defaults to 10.",
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "update_table",
+    description:
+      "Replace cell contents of an existing table in place. rows/columns must match the target table. Use list_tables to pick table_index.",
+    parameters: {
+      type: "object",
+      properties: {
+        table_index: {
+          type: "number",
+          description:
+            "0-based table index in the document. Omit to update the table containing the selection, or the first table.",
+        },
+        rows: { type: "number", description: "Number of rows (must match the table)." },
+        columns: { type: "number", description: "Number of columns (must match the table)." },
+        cells: {
+          type: "array",
+          description: "Full 2D array of replacement cell text values.",
+          items: {
+            type: "array",
+            items: { type: "string" },
+          },
+        },
+      },
+      required: ["rows", "columns", "cells"],
+      additionalProperties: false,
+    },
+  },
 ];
 
 export async function executeTool(
@@ -225,6 +271,10 @@ export async function executeTool(
         return executeFormatRange(argsJson, options.autoApplyEdits);
       case "insert_table":
         return executeInsertTable(argsJson, options.autoApplyEdits);
+      case "list_tables":
+        return executeListTables(argsJson);
+      case "update_table":
+        return executeUpdateTable(argsJson, options.autoApplyEdits);
       case "insert_comment":
         return executeInsertComment(argsJson);
       default:
@@ -486,6 +536,127 @@ async function executeInsertComment(argsJson: string): Promise<ToolExecutionResu
   };
 }
 
+async function executeListTables(argsJson: string): Promise<ToolExecutionResult> {
+  const args = parseArgs<{ max_tables?: number }>(argsJson);
+  const maxTables = Math.min(20, Math.max(1, Math.floor(args.max_tables ?? 10)));
+  const tables = await listDocumentTables(maxTables);
+  return {
+    success: true,
+    output: {
+      tableCount: tables.length,
+      tables: tables.map((table) => ({
+        index: table.index,
+        rows: table.rows,
+        columns: table.columns,
+        preview: table.preview,
+        values: table.values,
+      })),
+    },
+  };
+}
+
+function formatTableEditPreview(values: string[][]): string {
+  if (!values.length) return "(empty table)";
+  const maxRows = 6;
+  const lines = values.slice(0, maxRows).map((row) => row.join(" | "));
+  if (values.length > maxRows) lines.push("...");
+  return lines.join("\n");
+}
+
+async function executeUpdateTable(
+  argsJson: string,
+  autoApplyEdits: boolean,
+): Promise<ToolExecutionResult> {
+  const args = parseArgs<{
+    table_index?: number;
+    rows?: number;
+    columns?: number;
+    cells?: string[][];
+  }>(argsJson);
+  const rows = Math.min(20, Math.max(1, Math.floor(args.rows ?? 0)));
+  const columns = Math.min(10, Math.max(1, Math.floor(args.columns ?? 0)));
+  if (!rows || !columns) {
+    return failure("update_table", "rows and columns are required (rows 1-20, columns 1-10)");
+  }
+  if (!args.cells?.length) {
+    return failure("update_table", "cells 2D array is required");
+  }
+
+  let tableIndex: number;
+  try {
+    const requested =
+      args.table_index !== undefined && args.table_index !== null
+        ? Math.floor(args.table_index)
+        : undefined;
+    tableIndex = await resolveTableIndex(requested);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Could not find a table to update.";
+    return failure("update_table", message);
+  }
+
+  let current;
+  try {
+    current = await readTableAtIndex(tableIndex);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Could not read the target table.";
+    return failure("update_table", message);
+  }
+
+  if (current.rows !== rows || current.columns !== columns) {
+    return failure(
+      "update_table",
+      `Table ${tableIndex} is ${current.rows}x${current.columns}. Pass matching rows and columns.`,
+    );
+  }
+
+  const editId = createId();
+  const captured = await captureEndBookmark(editId);
+
+  const pendingEdit: PendingEdit = {
+    id: editId,
+    toolName: "update_table",
+    description: `Update table ${tableIndex} (${rows}x${columns})`,
+    before: formatTableEditPreview(current.values),
+    after: formatTableEditPreview(args.cells),
+    status: "pending",
+    bookmark: captured.bookmark,
+    undo: {
+      kind: "update_table",
+      bookmark: captured.bookmark,
+      previousText: "",
+      tableIndex,
+      previousTableValues: current.values,
+    },
+    payload: { tableIndex, rows, columns, cells: args.cells },
+  };
+
+  const applied = await applyMutationNow(pendingEdit, autoApplyEdits);
+  if (applied) {
+    return {
+      success: true,
+      output: {
+        applied: true,
+        tableIndex,
+        rows,
+        columns,
+        message: `Table ${tableIndex} updated in place.`,
+      },
+    };
+  }
+
+  return {
+    success: true,
+    output: {
+      pendingApproval: true,
+      tableIndex,
+      rows,
+      columns,
+      message: `Table ${tableIndex} update staged for approval.`,
+    },
+    pendingEdit,
+  };
+}
+
 async function executeInsertTable(
   argsJson: string,
   autoApplyEdits: boolean,
@@ -573,6 +744,14 @@ export async function applyPendingEdit(edit: PendingEdit): Promise<void> {
         edit.payload?.cells as string[][] | undefined,
       );
       break;
+    case "update_table":
+      await updateTableAtIndex(
+        edit.payload?.tableIndex as number,
+        edit.payload?.rows as number,
+        edit.payload?.columns as number,
+        edit.payload?.cells as string[][],
+      );
+      break;
     default:
       throw new WordOperationError(`Cannot apply edit for tool: ${edit.toolName}`);
   }
@@ -591,6 +770,12 @@ export async function undoPendingEdit(edit: PendingEdit): Promise<void> {
 
   if (edit.toolName === "insert_table") {
     await undoInsertTable();
+    if (edit.bookmark) await deleteBookmark(edit.bookmark);
+    return;
+  }
+
+  if (edit.toolName === "update_table") {
+    await revertUndoSnapshot(edit.undo);
     if (edit.bookmark) await deleteBookmark(edit.bookmark);
     return;
   }

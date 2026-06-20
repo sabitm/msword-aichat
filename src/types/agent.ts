@@ -6,7 +6,8 @@ export type MutationToolName =
   | "delete_range"
   | "apply_style"
   | "format_range"
-  | "insert_table";
+  | "insert_table"
+  | "update_table";
 
 export type UndoSnapshotKind = MutationToolName;
 
@@ -20,6 +21,8 @@ export interface UndoSnapshot {
     italic?: boolean;
     font_size?: number;
   };
+  tableIndex?: number;
+  previousTableValues?: string[][];
 }
 
 export interface ToolDefinition {
