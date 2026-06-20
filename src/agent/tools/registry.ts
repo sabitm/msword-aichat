@@ -172,7 +172,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "insert_comment",
     description:
-      "Add a Word review comment on the current selection. Does not change body text. Requires an active selection.",
+      "Add a Word review comment on the current selection. On Word 2016 (no WordApi 1.4), highlights the selection and returns the suggestion text instead. Requires an active selection.",
     parameters: {
       type: "object",
       properties: {
@@ -542,7 +542,21 @@ async function executeInsertComment(argsJson: string): Promise<ToolExecutionResu
   const comment = args.comment?.trim() ?? "";
   if (!comment) return failure("insert_comment", "comment is required");
 
-  await insertCommentOnSelection(comment);
+  const result = await insertCommentOnSelection(comment);
+  if (result.mode === "highlight_fallback") {
+    return {
+      success: true,
+      output: {
+        applied: true,
+        preview: comment.slice(0, 200),
+        fallback: "highlight",
+        message:
+          "Word 2016 cannot add review comments via the API (requires WordApi 1.4). The selection was highlighted yellow; tell the user the suggestion text shown here.",
+        comment,
+      },
+    };
+  }
+
   return {
     success: true,
     output: {

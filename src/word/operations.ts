@@ -28,11 +28,14 @@ function wrapWordError(error: unknown, fallback: string): never {
     );
   }
   if (/generalexception/i.test(message)) {
-    throw new WordOperationError(
-      "Word rejected the edit (often caused by replacing an entire table with plain text). Use update_table for table changes.",
-    );
+    throw new WordOperationError(fallback);
   }
   throw new WordOperationError(message);
+}
+
+export function isWordCommentInsertSupported(): boolean {
+  if (typeof Office === "undefined") return false;
+  return Office.context.requirements.isSetSupported("WordApi", "1.4");
 }
 
 export interface SearchMatch {
@@ -254,11 +257,39 @@ export async function formatAtBookmark(
   }
 }
 
-export async function insertCommentOnSelection(comment: string): Promise<void> {
+export type CommentInsertResult =
+  | { mode: "comment" }
+  | { mode: "highlight_fallback"; comment: string };
+
+export async function insertCommentOnSelection(comment: string): Promise<CommentInsertResult> {
   assertWordAvailable();
   const trimmed = comment.trim();
   if (!trimmed) {
     throw new WordOperationError("Comment text is required.");
+  }
+
+  if (!isWordCommentInsertSupported()) {
+    try {
+      await Word.run(async (context) => {
+        const selection = context.document.getSelection();
+        selection.load("text");
+        await context.sync();
+
+        if (!selection.text?.trim()) {
+          throw new WordOperationError("Select text in the document before adding a comment.");
+        }
+
+        // Word 2016 lacks Range.insertComment (WordApi 1.4). Highlight instead.
+        selection.font.highlightColor = "#FFFF00";
+        await context.sync();
+      });
+      return { mode: "highlight_fallback", comment: trimmed };
+    } catch (error) {
+      wrapWordError(
+        error,
+        "Failed to mark the selection for review (Word 2016 comment API unavailable).",
+      );
+    }
   }
 
   try {
@@ -274,8 +305,9 @@ export async function insertCommentOnSelection(comment: string): Promise<void> {
       selection.insertComment(trimmed);
       await context.sync();
     });
+    return { mode: "comment" };
   } catch (error) {
-    wrapWordError(error, "Failed to insert comment.");
+    wrapWordError(error, "Failed to insert comment on the selection.");
   }
 }
 

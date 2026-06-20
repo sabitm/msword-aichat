@@ -17,7 +17,7 @@ export function buildAgentSystemPrompt(
     "- Use update_table to change an existing table in place (same rows/columns). Call list_tables first when multiple tables exist.",
     "- Never use replace_text on a table or table selection — Word will error. Use update_table with a full cells 2D array.",
     "- replace_text is for plain body/paragraph text outside tables only.",
-    "- Use insert_comment to add Word review comments on the current selection.",
+    "- Use insert_comment to add Word review comments on the current selection (Office 2019+ / M365). On Word 2016 it highlights the selection and returns the suggestion text instead of a native comment.",
     `- Supported styles: ${DOCUMENT_STYLES.join(", ")}.`,
     "- Edits are staged for user approval unless auto-apply is enabled.",
     "- Prefer minimal, targeted edits that preserve the author's intent.",
