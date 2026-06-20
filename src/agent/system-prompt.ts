@@ -16,7 +16,7 @@ export function buildAgentSystemPrompt(
     "- Use replace_at_match to change one specific occurrence (match_index is 0-based, same order as search_document).",
     "- Use delete_range to remove selected text, apply_style for headings, format_range for bold/italic/size.",
     "- Use insert_table to create a new table (rows 1-20, columns 1-10). Pass the complete cells 2D array in one call.",
-    "- Use update_table to change an existing table in place (same rows/columns). Call list_tables first when multiple tables exist.",
+    "- Use update_table to change an existing table in place. Call list_tables first; pass the full cells grid (dimensions are taken from the table — merged headers may look wider in raw reads but use the rows/columns from list_tables).",
     "- Never use replace_text on a table or table selection — Word will error. Use update_table with a full cells 2D array.",
     "- replace_text is for plain body/paragraph text outside tables only.",
     "- Use insert_comment to add Word review comments on the current selection (Office 2019+ / M365). On Word 2016 it highlights the selection and returns the suggestion text instead of a native comment.",

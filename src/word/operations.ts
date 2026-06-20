@@ -323,6 +323,29 @@ function cloneCellGrid(values: string[][]): string[][] {
   return values.map((row) => row.slice());
 }
 
+/** Dimensions Word accepts for table.values writes (merged cells may return ragged rows on read). */
+function getTableWriteDimensions(
+  values: string[][],
+  rowCount?: number,
+): { rows: number; columns: number } {
+  const rows = rowCount !== undefined && rowCount > 0 ? rowCount : values.length;
+  const columns = rows > 0 ? (values[0]?.length ?? 0) : 0;
+  return { rows, columns };
+}
+
+function normalizeTableValues(values: string[][], rows: number, columns: number): string[][] {
+  const grid: string[][] = [];
+  for (let rowIndex = 0; rowIndex < rows; rowIndex += 1) {
+    const source = values[rowIndex] ?? [];
+    const line: string[] = [];
+    for (let colIndex = 0; colIndex < columns; colIndex += 1) {
+      line.push(source[colIndex] ?? "");
+    }
+    grid.push(line);
+  }
+  return grid;
+}
+
 function formatTablePreview(values: string[][], maxRows = 4): string {
   if (!values.length) return "(empty table)";
   const lines = values.slice(0, maxRows).map((row) => row.join(" | "));
@@ -387,20 +410,20 @@ export async function listDocumentTables(maxTables = 10): Promise<DocumentTableI
 
       const count = Math.min(tables.items.length, limit);
       for (let index = 0; index < count; index += 1) {
-        tables.items[index].load("values");
+        tables.items[index].load(["values", "rowCount"]);
       }
       await context.sync();
 
       const infos: DocumentTableInfo[] = [];
       for (let index = 0; index < count; index += 1) {
-        const values = (tables.items[index].values as string[][]) ?? [];
-        const rows = values.length;
-        const columns = rows > 0 ? (values[0]?.length ?? 0) : 0;
+        const rawValues = (tables.items[index].values as string[][]) ?? [];
+        const dimensions = getTableWriteDimensions(rawValues, tables.items[index].rowCount);
+        const values = normalizeTableValues(rawValues, dimensions.rows, dimensions.columns);
         infos.push({
           index,
-          rows,
-          columns,
-          values: cloneCellGrid(values),
+          rows: dimensions.rows,
+          columns: dimensions.columns,
+          values,
           preview: formatTablePreview(values),
         });
       }
@@ -466,18 +489,18 @@ export async function readTableAtIndex(tableIndex: number): Promise<DocumentTabl
       }
 
       const table = tables.items[tableIndex];
-      table.load("values");
+      table.load(["values", "rowCount"]);
       await context.sync();
 
-      const values = (table.values as string[][]) ?? [];
-      const rows = values.length;
-      const columns = rows > 0 ? (values[0]?.length ?? 0) : 0;
+      const rawValues = (table.values as string[][]) ?? [];
+      const dimensions = getTableWriteDimensions(rawValues, table.rowCount);
+      const values = normalizeTableValues(rawValues, dimensions.rows, dimensions.columns);
 
       return {
         index: tableIndex,
-        rows,
-        columns,
-        values: cloneCellGrid(values),
+        rows: dimensions.rows,
+        columns: dimensions.columns,
+        values,
         preview: formatTablePreview(values),
       };
     });
@@ -511,16 +534,15 @@ export async function updateTableAtIndex(
       }
 
       const table = tables.items[tableIndex];
-      table.load("values");
+      table.load(["values", "rowCount"]);
       await context.sync();
 
       const current = (table.values as string[][]) ?? [];
-      const currentRows = current.length;
-      const currentColumns = currentRows > 0 ? (current[0]?.length ?? 0) : 0;
+      const dimensions = getTableWriteDimensions(current, table.rowCount);
 
-      if (currentRows !== rows || currentColumns !== columns) {
+      if (dimensions.rows !== rows || dimensions.columns !== columns) {
         throw new WordOperationError(
-          `Table ${tableIndex} is ${currentRows}x${currentColumns}. Pass matching rows and columns.`,
+          `Table ${tableIndex} is ${dimensions.rows}x${dimensions.columns}. Pass matching rows and columns.`,
         );
       }
 

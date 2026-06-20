@@ -364,7 +364,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "update_table",
     description:
-      "Replace cell contents of an existing table in place. rows/columns must match the target table. Use list_tables to pick table_index.",
+      "Replace cell contents of an existing table in place. Dimensions are taken from the target table; pass a full cells grid (extra/missing rows or columns are padded or trimmed). Use list_tables first.",
     parameters: {
       type: "object",
       properties: {
@@ -373,8 +373,14 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           description:
             "0-based table index in the document. Omit to update the table containing the selection, or the first table.",
         },
-        rows: { type: "number", description: "Number of rows (must match the table)." },
-        columns: { type: "number", description: "Number of columns (must match the table)." },
+        rows: {
+          type: "number",
+          description: "Optional row count hint (actual table size is used).",
+        },
+        columns: {
+          type: "number",
+          description: "Optional column count hint (actual table size is used).",
+        },
         cells: {
           type: "array",
           description: "Full 2D array of replacement cell text values.",
@@ -384,7 +390,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           },
         },
       },
-      required: ["rows", "columns", "cells"],
+      required: ["cells"],
       additionalProperties: false,
     },
   },
@@ -820,6 +826,24 @@ function formatTableEditPreview(values: string[][]): string {
   return lines.join("\n");
 }
 
+function normalizeUpdateTableCells(
+  cellValues: string[][] | undefined,
+  rows: number,
+  columns: number,
+): string[][] | null {
+  if (!cellValues?.length || rows < 1 || columns < 1) return null;
+  const grid: string[][] = [];
+  for (let rowIndex = 0; rowIndex < rows; rowIndex += 1) {
+    const source = cellValues[rowIndex] ?? [];
+    const line: string[] = [];
+    for (let colIndex = 0; colIndex < columns; colIndex += 1) {
+      line.push(source[colIndex] ?? "");
+    }
+    grid.push(line);
+  }
+  return grid;
+}
+
 async function executeUpdateTable(
   argsJson: string,
   autoApplyEdits: boolean,
@@ -830,11 +854,6 @@ async function executeUpdateTable(
     columns?: number;
     cells?: string[][];
   }>(argsJson);
-  const rows = Math.min(20, Math.max(1, Math.floor(args.rows ?? 0)));
-  const columns = Math.min(10, Math.max(1, Math.floor(args.columns ?? 0)));
-  if (!rows || !columns) {
-    return failure("update_table", "rows and columns are required (rows 1-20, columns 1-10)");
-  }
   if (!args.cells?.length) {
     return failure("update_table", "cells 2D array is required");
   }
@@ -859,11 +878,11 @@ async function executeUpdateTable(
     return failure("update_table", message);
   }
 
-  if (current.rows !== rows || current.columns !== columns) {
-    return failure(
-      "update_table",
-      `Table ${tableIndex} is ${current.rows}x${current.columns}. Pass matching rows and columns.`,
-    );
+  const rows = current.rows;
+  const columns = current.columns;
+  const normalizedCells = normalizeUpdateTableCells(args.cells, rows, columns);
+  if (!normalizedCells) {
+    return failure("update_table", "cells 2D array is required");
   }
 
   const editId = createId();
@@ -874,7 +893,7 @@ async function executeUpdateTable(
     toolName: "update_table",
     description: `Update table ${tableIndex} (${rows}x${columns})`,
     before: formatTableEditPreview(current.values),
-    after: formatTableEditPreview(args.cells),
+    after: formatTableEditPreview(normalizedCells),
     status: "pending",
     bookmark: captured.bookmark,
     undo: {
@@ -884,7 +903,7 @@ async function executeUpdateTable(
       tableIndex,
       previousTableValues: current.values,
     },
-    payload: { tableIndex, rows, columns, cells: args.cells },
+    payload: { tableIndex, rows, columns, cells: normalizedCells },
   };
 
   const applied = await applyMutationNow(pendingEdit, autoApplyEdits);
