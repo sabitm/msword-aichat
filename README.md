@@ -11,7 +11,7 @@ Built for **Word 2016 Windows** (IE11 task pane) and also runs on **Office 2019+
 - Connection test against your configured endpoint
 - **Chat mode** — streaming responses with optional document context
 - **Agent mode** — multi-step tool loop with document read/write tools
-- **Agent tools (12):** `get_selection`, `get_document_text`, `search_document`, `list_tables`, `insert_text`, `replace_text`, `delete_range`, `apply_style`, `format_range`, `insert_table`, `update_table`, `insert_comment`
+- **Agent tools (14):** `get_selection`, `get_document_text`, `search_document`, `list_tables`, `insert_text`, `replace_text`, `find_and_replace`, `replace_at_match`, `delete_range`, `apply_style`, `format_range`, `insert_table`, `update_table`, `insert_comment`
 - **Slash commands:** `/fix`, `/table`, `/toc`, `/summarize`, `/formal`, `/comment`
 - **Custom instructions** — persistent persona/rules in Settings
 - **Per-document conversations** — chat history keyed by document URL (toggle in Settings)
@@ -21,8 +21,9 @@ Built for **Word 2016 Windows** (IE11 task pane) and also runs on **Office 2019+
 - **Undo** — revert the last applied edit from the preview panel
 - Optional **auto-apply edits** in Settings
 - Agent step trace (collapsible) per assistant message
+- Compact **chat toolbar** — mode, context, refresh, and per-document session status in one row
 - Document context modes: Selection, Outline, or None
-- Quick actions: **Summarize**, **Improve**, **Explain**
+- Auto-scroll during streaming with jump-to-bottom button
 - API keys stored locally on the device (separate from other settings)
 - **Fetch models** — load model list from `/models` when your gateway supports it
 - **Error actions** — Retry failed messages or copy error details
@@ -93,6 +94,8 @@ The agent can call tools to read and edit the document:
 | `list_tables` | List document tables with index, size, values, and preview |
 | `insert_text` | Insert text at selection or end of document |
 | `replace_text` | Replace selected **plain text** (not tables — use `update_table`) |
+| `find_and_replace` | Bulk find/replace in document body (skips table cells by default) |
+| `replace_at_match` | Replace one occurrence by 0-based `match_index` (use `search_document` first) |
 | `delete_range` | Delete the current selection |
 | `apply_style` | Apply Normal, Heading1–3, Title, or Subtitle |
 | `format_range` | Bold, italic, or font size on selection |
@@ -126,11 +129,12 @@ edit the table column from number of days into the number of public holidays in 
 
 Expected flow: `list_tables` → `update_table` with `table_index`, matching `rows`/`columns`, and updated `cells`.
 
-### Document context bar
+### Chat toolbar
 
-1. Choose **Context**: Selection, Outline, or None
-2. Click **Refresh** to re-read the document before sending
-3. Use **Quick actions** (Summarize / Improve / Explain) with Selection or Outline context
+1. Choose **Mode**: Chat or Agent
+2. Choose **Context**: Selection, Outline, or None
+3. Click **Refresh** to re-read the document before sending
+4. The status line shows token estimate and per-document save state when persistence is enabled
 
 ## Configuration
 
@@ -163,6 +167,9 @@ Open **Settings** from the task-pane header (the add-in opens Settings automatic
 | `npm run validate:prod` | Validate `manifest.prod.xml` template |
 | `npm run package` | Build and assemble `package/` for deployment |
 | `npm run package -- https://host/path` | Package with production manifest URLs filled in |
+| `npm run package:local` | Build local distribution → `release/msword-aichat-local/` (`.mjs` + `.bat`) |
+| `npm run package:local:exe` | Same as above with self-contained Windows `.exe` launchers (no Node for users) |
+| `npm run serve:local` | Serve production `dist/` over HTTPS on port 3000 (dev/testing) |
 | `npm run proxy` | Start local CORS proxy on port 8787 (see below) |
 | `npm run smoke` | Automated smoke test (build, validate, package, dev server) |
 | `npm run certs` | Install trusted localhost dev certs (Windows — run terminal as Administrator) |
@@ -178,6 +185,7 @@ msword-aichat/
 ├── webpack.config.cjs        # ES5 build (IE11)
 ├── commands.html             # Ribbon commands stub (required by manifest)
 ├── public/assets/            # Add-in icons
+├── scripts/                  # package-addin.mjs, package-local.mjs, smoke-test.mjs, …
 └── src/
     ├── agent/                # Orchestrator, tools, system prompt
     ├── llm/                  # OpenAI & Anthropic-compatible providers + XHR SSE
@@ -221,6 +229,8 @@ Word (Office.js)  ←→  Task Pane UI (React 16 + Fluent v8)
 
 ## Distribution
 
+### Remote hosting (org catalog / HTTPS server)
+
 Build and create a deployable folder:
 
 ```bash
@@ -230,6 +240,26 @@ npm run package -- https://addins.yourcompany.com/msword-aichat
 Upload the contents of `package/` to your HTTPS origin (bundle `.js` must sit next to `taskpane.html`). Use `manifest.xml` from that folder for sideloading or Microsoft 365 admin center deployment.
 
 For local development, keep using root `manifest.xml` (localhost URLs).
+
+### Local sharing (no remote server)
+
+For sharing with colleagues who do not have a web server or Node.js installed:
+
+```bash
+npm run package:local:exe
+```
+
+This writes `release/msword-aichat-local/` with the production bundle, `manifest.xml` (localhost URLs), and three self-contained Windows launchers:
+
+| Launcher | Purpose |
+|----------|---------|
+| `Install-certificate.bat` | Trust localhost HTTPS cert (run as Administrator, once per machine) |
+| `Sideload-add-in.bat` | Register the add-in with Word (once per machine) |
+| `Launch-server.bat` | Start `https://localhost:3000` (each session — keep window open) |
+
+Zip and share the whole folder. Recipients configure their LLM endpoint in Settings after opening **Home → AI Chat**.
+
+Use `npm run package:local` instead if you prefer `.mjs` scripts with a Node.js fallback (recipients need Node installed, or you rebuild with `:exe`).
 
 ### CORS and local routers
 
@@ -295,7 +325,7 @@ Regression test in Word on the web after Word 2016 sign-off:
 
 **Blank white task pane (no UI)**
 
-- Confirm you are on the `ie11-rewrite` branch with Webpack dev server running (`npm run dev`).
+- Confirm Webpack dev server is running (`npm run dev`).
 - Restart `npm run dev` after `npm run certs`; close Word before `npm start`.
 - On Office 2019+ / M365, confirm [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/) is installed if the pane is blank on modern Word.
 
@@ -334,7 +364,7 @@ Word uses its own embedded browser and does **not** trust self-signed certificat
 
 **Context shows "No text selected"**
 
-- Highlight text in the document, then click the refresh button in the context bar
+- Highlight text in the document, then click **Refresh** in the chat toolbar
 
 **Table edit fails or creates a duplicate table**
 

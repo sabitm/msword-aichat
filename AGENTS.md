@@ -12,11 +12,11 @@ Build a **Microsoft Word task-pane add-in** that provides:
 
 Phase 5 delivers conversation persistence, custom instructions, slash commands, `insert_comment`, and a dev CORS proxy. Remaining backlog items are optional future work.
 
-**Minimum supported host (branch `ie11-rewrite`):** Word **2016 Windows** (IE11 task pane). Also runs on Office 2019+ / M365 (WebView2) and Word on the web. Built with Webpack + React 16 + Fluent UI v8 + ES5.
+**Minimum supported host:** Word **2016 Windows** (IE11 task pane). Also runs on Office 2019+ / M365 (WebView2) and Word on the web. Built with Webpack + React 16 + Fluent UI v8 + ES5.
 
 ---
 
-## Current state (IE rewrite on `ie11-rewrite` — ship-ready)
+## Current state (ship-ready)
 
 | Area | Implemented | Location |
 |------|-------------|----------|
@@ -29,7 +29,7 @@ Phase 5 delivers conversation persistence, custom instructions, slash commands, 
 | Anthropic-compatible adapter + tools | Yes | `src/llm/anthropic-compatible.ts`, agent transcript replay |
 | Chat mode (streaming) | Yes | `src/hooks/useChat.legacy.ts` |
 | Agent mode (tool loop) | Yes | `src/agent/orchestrator.ts` |
-| Agent tools (12 total) | Yes | `src/agent/tools/registry.ts` |
+| Agent tools (14 total) | Yes | `src/agent/tools/registry.ts` |
 | Per-document conversation store | Yes | `src/conversation/store.legacy.ts`, `useDocumentKey.legacy.ts` |
 | Custom instructions / review mode | Yes | `src/settings/defaults.ts`, `prompt-options.ts` |
 | Slash commands + hints | Yes | `src/agent/slash-commands.ts`, `MessageInput.legacy.tsx` |
@@ -44,6 +44,7 @@ Phase 5 delivers conversation persistence, custom instructions, slash commands, 
 | Agent step trace | Yes | `AgentTrace.tsx` |
 | Word context (selection, outline) | Yes | `src/word/context.ts` |
 | Distribution package script | Yes | `scripts/package-addin.mjs` |
+| Local distribution (localhost) | Yes | `scripts/package-local.mjs`, `install-certificate.mjs`, `sideload-add-in.mjs`, `local-server.mjs` |
 | Automated smoke test | Yes | `scripts/smoke-test.mjs` |
 
 **Legacy build skips:** onboarding wizard, telemetry, Vite/React 19/Fluent v9 UI path.
@@ -83,8 +84,8 @@ src/
     ├── App.legacy.tsx
     ├── main.legacy.tsx
     └── components.legacy/    # Fluent v8 UI (IeSelect for IE11 dropdowns)
-        ├── ModeBar.tsx
-        ├── ContextBar.tsx
+        ├── ChatToolbar.tsx   # Mode + context + refresh + session status
+        ├── ChatPanel.tsx
         ├── AgentTrace.tsx
         ├── EditPreview.tsx
         └── ...
@@ -178,7 +179,7 @@ flowchart TB
 
 ### Phase 1 — Document context (complete)
 
-Delivered: `src/word/context.ts`, context mode bar, token estimate, quick actions.
+Delivered: `src/word/context.ts`, context modes, token estimate (UI consolidated in `ChatToolbar.tsx`).
 
 ### Phase 2 — Agent MVP (complete)
 
@@ -193,6 +194,7 @@ Delivered: `search_document`, `delete_range`, `apply_style`, `format_range`, `in
 - `insert_table` undo deletes the last document table (best-effort).
 - `update_table` requires matching rows/columns; resizes are not supported yet.
 - `replace_text` is blocked when the selection is inside a table — use `update_table`.
+- `find_and_replace` / `replace_at_match` skip table cells by default; use `update_table` for table edits.
 - `search_document` must not load `range.start`/`end` on Word 2016; positions are estimated from `body.text`.
 - Table cell writes use `table.values` after `context.sync()` (Word 2016–safe).
 
@@ -236,7 +238,7 @@ Delivered: per-document conversation persistence, custom instructions, review mo
 - **Tables:** `insert_table` creates; `list_tables` + `update_table` edits in place; never `replace_text` on table selections
 - Log each step for the agent trace panel
 
-**Registered agent tools (12):** `get_selection`, `get_document_text`, `search_document`, `list_tables`, `insert_text`, `replace_text`, `delete_range`, `apply_style`, `format_range`, `insert_table`, `update_table`, `insert_comment`.
+**Registered agent tools (14):** `get_selection`, `get_document_text`, `search_document`, `list_tables`, `insert_text`, `replace_text`, `find_and_replace`, `replace_at_match`, `delete_range`, `apply_style`, `format_range`, `insert_table`, `update_table`, `insert_comment`.
 
 ---
 
@@ -268,6 +270,9 @@ npm run build        # production build
 npm run typecheck
 npm run validate     # manifest.xml
 npm run package      # build + assemble package/ for deployment
+npm run package:local      # local distribution → release/msword-aichat-local/
+npm run package:local:exe  # same + self-contained Windows .exe launchers (pkg node22-win-x64)
+npm run serve:local  # HTTPS static server for dist/ (port 3000)
 npm run proxy        # local CORS proxy for dev gateways
 npm run smoke        # automated smoke test pass
 ```
@@ -307,6 +312,8 @@ npm run smoke        # automated smoke test pass
 | Manifest version | Must be `>= 1.0.0.0` (see `manifest.xml`) |
 | Huge prompts | Phase 1 must chunk/bound context; never dump full doc by default |
 | Agent loops | Cap steps; show trace; allow cancel (Phase 2) |
+| Local distribution exes | Use `node22-win-x64` pkg target; `node20`/`node18` may 404 in pkg-fetch cache |
+| Sideload exe size | `office-addin-dev-settings` pulls a large dependency tree (~60 MB per launcher exe) |
 
 ---
 
