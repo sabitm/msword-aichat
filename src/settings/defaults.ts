@@ -6,7 +6,7 @@ export const DEFAULT_PROVIDER_CONFIG: ProviderConfig = {
   baseUrl: "https://api.openai.com/v1",
   apiKey: "",
   model: "gpt-4o-mini",
-  maxTokens: 2048,
+  maxTokens: 4096,
   temperature: 0.7,
 };
 
