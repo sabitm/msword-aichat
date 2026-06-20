@@ -811,6 +811,7 @@ async function executeListTables(argsJson: string): Promise<ToolExecutionResult>
         index: table.index,
         rows: table.rows,
         columns: table.columns,
+        isUniform: table.isUniform,
         preview: table.preview,
         values: table.values,
       })),

@@ -27,10 +27,91 @@ function wrapWordError(error: unknown, fallback: string): never {
       "Word could not find the table cell to update. Try the request again or insert the table at the document end.",
     );
   }
+  if (/invalidargument/i.test(message)) {
+    throw new WordOperationError(
+      "Word rejected the table update. Tables with merged header cells cannot be replaced in one shot — update only the data rows that changed.",
+    );
+  }
   if (/generalexception/i.test(message)) {
     throw new WordOperationError(fallback);
   }
   throw new WordOperationError(message);
+}
+
+function isBulkTableWriteError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /invalidargument|generalexception/i.test(message);
+}
+
+async function writeTableValuesPerCell(
+  table: Word.Table,
+  grid: string[][],
+  previous: string[][],
+  context: Word.RequestContext,
+): Promise<void> {
+  const rows = grid.length;
+  const columns = rows > 0 ? (grid[0]?.length ?? 0) : 0;
+  const updates: { cell: Word.TableCell; value: string }[] = [];
+
+  for (let rowIndex = 0; rowIndex < rows; rowIndex += 1) {
+    for (let colIndex = 0; colIndex < columns; colIndex += 1) {
+      const next = grid[rowIndex][colIndex] ?? "";
+      const prev = previous[rowIndex]?.[colIndex] ?? "";
+      if (next === prev) continue;
+
+      const cell = table.getCellOrNullObject(rowIndex, colIndex);
+      updates.push({ cell, value: next });
+    }
+  }
+
+  if (!updates.length) {
+    return;
+  }
+
+  for (let index = 0; index < updates.length; index += 1) {
+    updates[index].cell.load("isNullObject");
+  }
+  await context.sync();
+
+  let wrote = 0;
+  for (let index = 0; index < updates.length; index += 1) {
+    if (!updates[index].cell.isNullObject) {
+      updates[index].cell.body.insertText(updates[index].value, Word.InsertLocation.replace);
+      wrote += 1;
+    }
+  }
+
+  if (!wrote) {
+    throw new WordOperationError(
+      "Could not update any table cells. The table may use merged cells that block bulk edits.",
+    );
+  }
+
+  await context.sync();
+}
+
+async function writeTableValues(
+  table: Word.Table,
+  grid: string[][],
+  previous: string[][],
+  context: Word.RequestContext,
+): Promise<void> {
+  table.load("isUniform");
+  await context.sync();
+
+  if (table.isUniform !== false) {
+    try {
+      table.values = grid;
+      await context.sync();
+      return;
+    } catch (error) {
+      if (!isBulkTableWriteError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  await writeTableValuesPerCell(table, grid, previous, context);
 }
 
 export function isWordCommentInsertSupported(): boolean {
@@ -317,6 +398,7 @@ export interface DocumentTableInfo {
   columns: number;
   values: string[][];
   preview: string;
+  isUniform?: boolean;
 }
 
 function cloneCellGrid(values: string[][]): string[][] {
@@ -410,7 +492,7 @@ export async function listDocumentTables(maxTables = 10): Promise<DocumentTableI
 
       const count = Math.min(tables.items.length, limit);
       for (let index = 0; index < count; index += 1) {
-        tables.items[index].load(["values", "rowCount"]);
+        tables.items[index].load(["values", "rowCount", "isUniform"]);
       }
       await context.sync();
 
@@ -425,6 +507,7 @@ export async function listDocumentTables(maxTables = 10): Promise<DocumentTableI
           columns: dimensions.columns,
           values,
           preview: formatTablePreview(values),
+          isUniform: tables.items[index].isUniform,
         });
       }
       return infos;
@@ -489,7 +572,7 @@ export async function readTableAtIndex(tableIndex: number): Promise<DocumentTabl
       }
 
       const table = tables.items[tableIndex];
-      table.load(["values", "rowCount"]);
+      table.load(["values", "rowCount", "isUniform"]);
       await context.sync();
 
       const rawValues = (table.values as string[][]) ?? [];
@@ -502,6 +585,7 @@ export async function readTableAtIndex(tableIndex: number): Promise<DocumentTabl
         columns: dimensions.columns,
         values,
         preview: formatTablePreview(values),
+        isUniform: table.isUniform,
       };
     });
   } catch (error) {
@@ -546,8 +630,8 @@ export async function updateTableAtIndex(
         );
       }
 
-      table.values = grid;
-      await context.sync();
+      const previous = normalizeTableValues(current, dimensions.rows, dimensions.columns);
+      await writeTableValues(table, grid, previous, context);
     });
   } catch (error) {
     wrapWordError(error, "Failed to update table.");
@@ -567,8 +651,15 @@ export async function restoreTableAtIndex(tableIndex: number, values: string[][]
         throw new WordOperationError(`Cannot undo: table index ${tableIndex} no longer exists.`);
       }
 
-      tables.items[tableIndex].values = cloneCellGrid(values);
+      const table = tables.items[tableIndex];
+      table.load(["values", "rowCount"]);
       await context.sync();
+
+      const current = (table.values as string[][]) ?? [];
+      const dimensions = getTableWriteDimensions(current, table.rowCount);
+      const previous = normalizeTableValues(current, dimensions.rows, dimensions.columns);
+      const grid = normalizeTableValues(cloneCellGrid(values), dimensions.rows, dimensions.columns);
+      await writeTableValues(table, grid, previous, context);
     });
   } catch (error) {
     wrapWordError(error, "Failed to restore table.");
