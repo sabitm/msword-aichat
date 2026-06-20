@@ -1,4 +1,3 @@
-import { Text } from "@fluentui/react";
 import * as React from "react";
 import type { AgentStep } from "../../types/agent";
 
@@ -29,10 +28,8 @@ export function AgentTrace(props: AgentTraceProps): React.ReactElement | null {
 
   return (
     <details className="agent-trace">
-      <summary>
-        <Text variant="small" styles={{ root: { fontWeight: 600 } }}>
-          Agent steps ({props.steps.length})
-        </Text>
+      <summary className="agent-trace-summary">
+        {"Agent steps (" + props.steps.length + ")"}
       </summary>
       <ul className="agent-trace-list">
         {props.steps.map(function (step) {

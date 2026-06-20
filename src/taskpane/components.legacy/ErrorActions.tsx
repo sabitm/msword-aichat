@@ -52,7 +52,7 @@ export function ErrorActions(props: ErrorActionsProps): React.ReactElement {
       messageBarType={MessageBarType.error}
       className="error-actions"
       actions={
-        <div style={{ display: "flex", gap: 8 }}>
+        <div className="error-actions-buttons" style={{ display: "flex", flexWrap: "wrap" }}>
           {props.onRetry ? (
             <DefaultButton
               disabled={props.disabled}
