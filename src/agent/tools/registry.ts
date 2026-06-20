@@ -16,6 +16,7 @@ import {
   readBodyTextChunk,
   readSelectionPlain,
   readSelectionStyle,
+  selectionContainsTable,
   readTableAtIndex,
   resolveTableIndex,
   searchDocument,
@@ -124,7 +125,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "replace_text",
     description:
-      "Replace the currently selected text with new text. Captures the range so Apply works even if selection changes.",
+      "Replace the currently selected plain text with new text. Do not use on tables — use update_table instead.",
     parameters: {
       type: "object",
       properties: {
@@ -291,9 +292,18 @@ export async function executeTool(
 
 async function executeGetSelection(): Promise<ToolExecutionResult> {
   const text = await readSelectionPlain();
+  const inTable = await selectionContainsTable();
   return {
     success: true,
-    output: { text, empty: !text.trim(), length: text.length },
+    output: {
+      text,
+      empty: !text.trim(),
+      length: text.length,
+      inTable,
+      ...(inTable
+        ? { hint: "Selection is inside a table. Use list_tables and update_table, not replace_text." }
+        : {}),
+    },
   };
 }
 
@@ -383,6 +393,13 @@ async function executeReplaceText(
   const args = parseArgs<{ new_text?: string }>(argsJson);
   const newText = args.new_text ?? "";
   if (!newText.trim()) return failure("replace_text", "new_text is required");
+
+  if (await selectionContainsTable()) {
+    return failure(
+      "replace_text",
+      "Selection is inside a table. Call list_tables, then update_table with the full cells grid (same rows/columns).",
+    );
+  }
 
   const editId = createId();
   const { bookmark, text: before } = await captureSelectionBookmark(editId);

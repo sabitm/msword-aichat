@@ -27,6 +27,11 @@ function wrapWordError(error: unknown, fallback: string): never {
       "Word could not find the table cell to update. Try the request again or insert the table at the document end.",
     );
   }
+  if (/generalexception/i.test(message)) {
+    throw new WordOperationError(
+      "Word rejected the edit (often caused by replacing an entire table with plain text). Use update_table for table changes.",
+    );
+  }
   throw new WordOperationError(message);
 }
 
@@ -41,6 +46,21 @@ export interface FormatOptions {
   bold?: boolean;
   italic?: boolean;
   font_size?: number;
+}
+
+export async function selectionContainsTable(): Promise<boolean> {
+  assertWordAvailable();
+  try {
+    return await Word.run(async (context) => {
+      const selection = context.document.getSelection();
+      const parentTable = selection.parentTableOrNullObject;
+      parentTable.load("isNullObject");
+      await context.sync();
+      return !parentTable.isNullObject;
+    });
+  } catch (error) {
+    wrapWordError(error, "Failed to inspect selection.");
+  }
 }
 
 export async function readSelectionPlain(): Promise<string> {
