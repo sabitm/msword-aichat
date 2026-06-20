@@ -7,6 +7,7 @@ export interface IeSelectOption {
 
 interface IeSelectProps {
   label?: string;
+  ariaLabel?: string;
   value: string;
   options: IeSelectOption[];
   disabled?: boolean;
@@ -33,6 +34,7 @@ export function IeSelect(props: IeSelectProps): React.ReactElement {
         className={className}
         value={props.value}
         disabled={props.disabled}
+        aria-label={props.ariaLabel || props.label}
         onChange={function (event) {
           props.onChange(event.target.value);
         }}

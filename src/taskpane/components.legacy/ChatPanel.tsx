@@ -4,11 +4,10 @@ import type { UiMessage } from "../../hooks/useChat.legacy";
 import { useDocumentContext } from "../../hooks/useDocumentContext.legacy";
 import { useSettingsStore } from "../../hooks/useSettingsStore.legacy";
 import type { ContextMode } from "../../types/context";
-import { formatDocumentKeyLabel } from "../../word/document-key.legacy";
-import { ContextBar } from "./ContextBar";
+
+import { ChatToolbar } from "./ChatToolbar";
 import { MessageInput } from "./MessageInput";
 import { MessageList } from "./MessageList";
-import { ModeBar } from "./ModeBar";
 import { QuickActions } from "./QuickActions";
 
 interface ChatPanelProps {
@@ -58,18 +57,14 @@ export function ChatPanel(props: ChatPanelProps): React.ReactElement {
 
   return (
     <div className="chat-panel">
-      <ModeBar />
-      {persistConversations && props.docKey !== "loading" && props.docKey !== "browser" ? (
-        <div className="doc-session-bar">
-          <span>Conversation saved for: {formatDocumentKeyLabel(props.docKey)}</span>
-        </div>
-      ) : null}
-      <ContextBar
-        mode={props.contextMode}
+      <ChatToolbar
+        contextMode={props.contextMode}
         context={context}
         isLoading={isLoading}
+        docKey={props.docKey}
+        persistConversations={persistConversations}
         disabled={!isConfigured || props.isStreaming}
-        onModeChange={props.onContextModeChange}
+        onContextModeChange={props.onContextModeChange}
         onRefresh={function () {
           refresh();
         }}
