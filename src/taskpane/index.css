@@ -292,29 +292,6 @@ body,
   line-height: 1.4;
 }
 
-.quick-actions {
-  display: flex;
-  flex-direction: column;
-  padding: 12px;
-}
-
-.quick-actions > *:not(:last-child) {
-  margin-bottom: 8px;
-}
-
-.quick-actions-row {
-  display: flex;
-  flex-wrap: wrap;
-}
-
-.quick-actions-row > * {
-  margin: 0 8px 8px 0;
-}
-
-.quick-actions-hint {
-  color: #616161;
-}
-
 .agent-trace {
   width: 100%;
   padding: 6px 8px;

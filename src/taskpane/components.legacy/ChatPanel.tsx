@@ -8,8 +8,6 @@ import type { ContextMode } from "../../types/context";
 import { ChatToolbar } from "./ChatToolbar";
 import { MessageInput } from "./MessageInput";
 import { MessageList } from "./MessageList";
-import { QuickActions } from "./QuickActions";
-
 interface ChatPanelProps {
   messages: UiMessage[];
   isStreaming: boolean;
@@ -33,28 +31,6 @@ export function ChatPanel(props: ChatPanelProps): React.ReactElement {
   var isLoading = documentContextState.isLoading;
   var refresh = documentContextState.refresh;
 
-  var _a = React.useState<string | null>(null);
-  var contextNotice = _a[0];
-  var setContextNotice = _a[1];
-
-  function handleSend(message: string): void {
-    setContextNotice(null);
-    props.onSend(message);
-  }
-
-  function handleQuickAction(prompt: string): void {
-    if (props.contextMode !== "none" && context.empty && !context.error) {
-      setContextNotice(
-        props.contextMode === "selection"
-          ? "Select text in the document first, then try again."
-          : "Add headings to the document or switch to Selection context.",
-      );
-      return;
-    }
-    setContextNotice(null);
-    props.onSend(prompt);
-  }
-
   return (
     <div className="chat-panel">
       <ChatToolbar
@@ -75,19 +51,6 @@ export function ChatPanel(props: ChatPanelProps): React.ReactElement {
             Configure your AI endpoint in Settings before chatting.
           </MessageBar>
         ) : null}
-        {contextNotice ? (
-          <MessageBar
-            messageBarType={MessageBarType.warning}
-            styles={{ root: { margin: "0 12px 12px" } }}
-          >
-            {contextNotice}
-          </MessageBar>
-        ) : null}
-        <QuickActions
-          contextMode={props.contextMode}
-          disabled={!isConfigured || props.isStreaming}
-          onAction={handleQuickAction}
-        />
         <MessageList
           messages={props.messages}
           isStreaming={props.isStreaming}
@@ -97,7 +60,7 @@ export function ChatPanel(props: ChatPanelProps): React.ReactElement {
           onRetry={props.onRetry}
         />
       </div>
-      <MessageInput disabled={!isConfigured || props.isStreaming} onSend={handleSend} />
+      <MessageInput disabled={!isConfigured || props.isStreaming} onSend={props.onSend} />
     </div>
   );
 }
