@@ -1,5 +1,6 @@
 import type {
   DocumentStyleName,
+  FindReplaceMatchSnapshot,
   PendingEdit,
   ToolDefinition,
   ToolExecutionResult,
@@ -24,12 +25,16 @@ import {
   WordOperationError,
 } from "../../word/operations";
 import {
+  applyStagedFindReplacements,
   captureEndBookmark,
   captureSelectionBookmark,
   deleteBookmark,
   deleteBookmarkRange,
+  deleteBookmarks,
   insertAtBookmark,
   replaceBookmarkText,
+  stageFindReplacements,
+  type FindReplaceStageResult,
 } from "../../word/ranges";
 import { revertUndoSnapshot } from "../../word/undo";
 
@@ -59,6 +64,98 @@ function buildUndo(
   previousText: string,
 ): UndoSnapshot {
   return { kind, bookmark, previousText };
+}
+
+function buildFindReplaceUndo(
+  kind: "find_and_replace" | "replace_at_match",
+  snapshots: FindReplaceMatchSnapshot[],
+): UndoSnapshot {
+  return {
+    kind: kind,
+    bookmark: snapshots[0] ? snapshots[0].bookmark : "",
+    previousText: "",
+    matchSnapshots: snapshots,
+  };
+}
+
+function buildFindReplaceSamples(
+  snapshots: FindReplaceMatchSnapshot[],
+  limit: number,
+): Array<{ index: number; before: string }> {
+  var samples: Array<{ index: number; before: string }> = [];
+  var max = Math.min(limit, snapshots.length);
+  for (var i = 0; i < max; i += 1) {
+    samples.push({
+      index: snapshots[i].searchIndex,
+      before: snapshots[i].previousText,
+    });
+  }
+  return samples;
+}
+
+function buildFindReplaceOutput(
+  staged: FindReplaceStageResult,
+  count: number,
+  pendingApproval: boolean,
+): Record<string, unknown> {
+  return {
+    find: staged.find,
+    replace: staged.replace,
+    totalMatches: staged.totalMatches,
+    matchCount: count,
+    replacedCount: count,
+    skippedInTables: staged.skippedInTables,
+    samples: buildFindReplaceSamples(staged.staged, 3),
+    pendingApproval: pendingApproval,
+    message: pendingApproval
+      ? "Replacement staged for user approval."
+      : "Replacement applied.",
+  };
+}
+
+async function createFindReplacePendingEdit(
+  toolName: "find_and_replace" | "replace_at_match",
+  editId: string,
+  staged: FindReplaceStageResult,
+  autoApplyEdits: boolean,
+): Promise<ToolExecutionResult> {
+  var snapshots = staged.staged;
+  var count = snapshots.length;
+  var find = staged.find;
+  var replace = staged.replace;
+
+  var pendingEdit: PendingEdit = {
+    id: editId,
+    toolName: toolName,
+    description:
+      toolName === "find_and_replace"
+        ? 'Replace "' + find + '" → "' + replace + '" (' + count + "x)"
+        : 'Replace match ' + snapshots[0].searchIndex + ': "' + find + '" → "' + replace + '"',
+    before:
+      toolName === "find_and_replace"
+        ? 'Find: "' + find + '" (' + count + " match" + (count === 1 ? "" : "es") + ")"
+        : snapshots[0].previousText,
+    after: toolName === "find_and_replace" ? 'Replace with: "' + replace + '"' : replace,
+    status: "pending",
+    bookmark: snapshots[0].bookmark,
+    undo: buildFindReplaceUndo(toolName, snapshots),
+    payload: {
+      find: find,
+      replace: replace,
+      matchSnapshots: snapshots,
+    },
+  };
+
+  var applied = await applyMutationNow(pendingEdit, autoApplyEdits);
+  if (applied) {
+    return applied;
+  }
+
+  return {
+    success: true,
+    output: buildFindReplaceOutput(staged, count, true),
+    pendingEdit: pendingEdit,
+  };
 }
 
 async function applyMutationNow(
@@ -132,6 +229,52 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         new_text: { type: "string", description: "Replacement text for the current selection." },
       },
       required: ["new_text"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "find_and_replace",
+    description:
+      "Find all occurrences of text in the document body and replace them. Skips table cells by default. Use for bulk changes such as dates or repeated phrases.",
+    parameters: {
+      type: "object",
+      properties: {
+        find: { type: "string", description: "Text to search for." },
+        replace: { type: "string", description: "Replacement text (empty string deletes matches)." },
+        max_replacements: {
+          type: "number",
+          description: "Maximum occurrences to replace. Defaults to 50 (hard max 100).",
+        },
+        match_case: { type: "boolean", description: "Case-sensitive search. Defaults to false." },
+        skip_tables: {
+          type: "boolean",
+          description: "Skip matches inside tables. Defaults to true.",
+        },
+      },
+      required: ["find", "replace"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "replace_at_match",
+    description:
+      "Replace one specific search match by 0-based match_index. Skips table cells by default. Use search_document first to inspect matches.",
+    parameters: {
+      type: "object",
+      properties: {
+        find: { type: "string", description: "Text to search for." },
+        replace: { type: "string", description: "Replacement text." },
+        match_index: {
+          type: "number",
+          description: "0-based index of the match to replace (same order as search_document).",
+        },
+        match_case: { type: "boolean", description: "Case-sensitive search. Defaults to false." },
+        skip_tables: {
+          type: "boolean",
+          description: "Fail if the match is inside a table when true. Defaults to true.",
+        },
+      },
+      required: ["find", "replace", "match_index"],
       additionalProperties: false,
     },
   },
@@ -264,6 +407,10 @@ export async function executeTool(
         return executeInsertText(argsJson, options.autoApplyEdits);
       case "replace_text":
         return executeReplaceText(argsJson, options.autoApplyEdits);
+      case "find_and_replace":
+        return executeFindAndReplace(argsJson, options.autoApplyEdits);
+      case "replace_at_match":
+        return executeReplaceAtMatch(argsJson, options.autoApplyEdits);
       case "delete_range":
         return executeDeleteRange(options.autoApplyEdits);
       case "apply_style":
@@ -384,6 +531,85 @@ async function executeInsertText(
     },
     pendingEdit,
   };
+}
+
+async function executeFindAndReplace(
+  argsJson: string,
+  autoApplyEdits: boolean,
+): Promise<ToolExecutionResult> {
+  var args = parseArgs<{
+    find?: string;
+    replace?: string;
+    max_replacements?: number;
+    match_case?: boolean;
+    skip_tables?: boolean;
+  }>(argsJson);
+  var find = args.find?.trim() ?? "";
+  if (!find) return failure("find_and_replace", "find is required");
+  if (args.replace === undefined || args.replace === null) {
+    return failure("find_and_replace", "replace is required");
+  }
+
+  var editId = createId();
+  var staged = await stageFindReplacements(editId, find, args.replace, {
+    matchCase: Boolean(args.match_case),
+    maxReplacements: args.max_replacements,
+    skipTables: args.skip_tables !== false,
+  });
+
+  if (staged.staged.length === 0) {
+    return {
+      success: true,
+      output: {
+        find: staged.find,
+        replace: staged.replace,
+        totalMatches: staged.totalMatches,
+        matchCount: 0,
+        replacedCount: 0,
+        skippedInTables: staged.skippedInTables,
+        message:
+          staged.totalMatches === 0
+            ? "No matches found."
+            : "No replaceable matches (all matches were inside tables).",
+      },
+    };
+  }
+
+  return createFindReplacePendingEdit("find_and_replace", editId, staged, autoApplyEdits);
+}
+
+async function executeReplaceAtMatch(
+  argsJson: string,
+  autoApplyEdits: boolean,
+): Promise<ToolExecutionResult> {
+  var args = parseArgs<{
+    find?: string;
+    replace?: string;
+    match_index?: number;
+    match_case?: boolean;
+    skip_tables?: boolean;
+  }>(argsJson);
+  var find = args.find?.trim() ?? "";
+  if (!find) return failure("replace_at_match", "find is required");
+  if (args.replace === undefined || args.replace === null) {
+    return failure("replace_at_match", "replace is required");
+  }
+  if (args.match_index === undefined || args.match_index === null) {
+    return failure("replace_at_match", "match_index is required");
+  }
+
+  var editId = createId();
+  var staged = await stageFindReplacements(editId, find, args.replace, {
+    matchCase: Boolean(args.match_case),
+    matchIndex: Math.floor(args.match_index),
+    skipTables: args.skip_tables !== false,
+  });
+
+  if (staged.staged.length === 0) {
+    return failure("replace_at_match", "No match staged for replacement.");
+  }
+
+  return createFindReplacePendingEdit("replace_at_match", editId, staged, autoApplyEdits);
 }
 
 async function executeReplaceText(
@@ -749,6 +975,16 @@ export async function applyPendingEdit(edit: PendingEdit): Promise<void> {
     case "replace_text":
       await replaceBookmarkText(edit.bookmark, edit.after);
       break;
+    case "find_and_replace":
+    case "replace_at_match": {
+      var matchSnapshots = edit.payload?.matchSnapshots as FindReplaceMatchSnapshot[] | undefined;
+      var replaceValue = edit.payload?.replace as string | undefined;
+      if (!matchSnapshots?.length || replaceValue === undefined) {
+        throw new WordOperationError("Cannot apply find/replace edit: payload is incomplete.");
+      }
+      await applyStagedFindReplacements(matchSnapshots, replaceValue);
+      break;
+    }
     case "insert_text": {
       const location = (edit.payload?.location as "selection" | "end" | undefined) ?? "selection";
       const insertLocation = location === "end" ? "after" : "before";
@@ -789,7 +1025,21 @@ export async function applyPendingEdit(edit: PendingEdit): Promise<void> {
 }
 
 export async function rejectPendingEdit(edit: PendingEdit): Promise<void> {
-  if (edit.status === "pending" && edit.bookmark) {
+  if (edit.status !== "pending") {
+    return;
+  }
+
+  var matchSnapshots = edit.payload?.matchSnapshots as FindReplaceMatchSnapshot[] | undefined;
+  if (matchSnapshots?.length) {
+    await deleteBookmarks(
+      matchSnapshots.map(function (snapshot) {
+        return snapshot.bookmark;
+      }),
+    );
+    return;
+  }
+
+  if (edit.bookmark) {
     await deleteBookmark(edit.bookmark);
   }
 }
@@ -808,6 +1058,19 @@ export async function undoPendingEdit(edit: PendingEdit): Promise<void> {
   if (edit.toolName === "update_table") {
     await revertUndoSnapshot(edit.undo);
     if (edit.bookmark) await deleteBookmark(edit.bookmark);
+    return;
+  }
+
+  if (edit.toolName === "find_and_replace" || edit.toolName === "replace_at_match") {
+    await revertUndoSnapshot(edit.undo);
+    var snapshots = edit.payload?.matchSnapshots as FindReplaceMatchSnapshot[] | undefined;
+    if (snapshots?.length) {
+      await deleteBookmarks(
+        snapshots.map(function (snapshot) {
+          return snapshot.bookmark;
+        }),
+      );
+    }
     return;
   }
 

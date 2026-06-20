@@ -3,11 +3,19 @@ export type InteractionMode = "chat" | "agent";
 export type MutationToolName =
   | "insert_text"
   | "replace_text"
+  | "find_and_replace"
+  | "replace_at_match"
   | "delete_range"
   | "apply_style"
   | "format_range"
   | "insert_table"
   | "update_table";
+
+export interface FindReplaceMatchSnapshot {
+  searchIndex: number;
+  bookmark: string;
+  previousText: string;
+}
 
 export type UndoSnapshotKind = MutationToolName;
 
@@ -23,6 +31,7 @@ export interface UndoSnapshot {
   };
   tableIndex?: number;
   previousTableValues?: string[][];
+  matchSnapshots?: FindReplaceMatchSnapshot[];
 }
 
 export interface ToolDefinition {

@@ -1,5 +1,5 @@
 import type { UndoSnapshot } from "../types/agent";
-import { deleteBookmark, replaceBookmarkText } from "./ranges";
+import { deleteBookmark, deleteBookmarks, replaceBookmarkText, restoreFindReplaceSnapshots } from "./ranges";
 import {
   applyStyleAtBookmark,
   formatAtBookmark,
@@ -39,6 +39,18 @@ export async function revertUndoSnapshot(snapshot: UndoSnapshot): Promise<void> 
       }
       await restoreTableAtIndex(snapshot.tableIndex, snapshot.previousTableValues);
       break;
+    case "find_and_replace":
+    case "replace_at_match":
+      if (!snapshot.matchSnapshots?.length) {
+        throw new WordOperationError("Cannot undo find/replace: snapshot is incomplete.");
+      }
+      await restoreFindReplaceSnapshots(snapshot.matchSnapshots);
+      await deleteBookmarks(
+        snapshot.matchSnapshots.map(function (match) {
+          return match.bookmark;
+        }),
+      );
+      return;
     default: {
       const exhaustive: never = snapshot.kind;
       throw new WordOperationError(`Unsupported undo kind: ${exhaustive}`);

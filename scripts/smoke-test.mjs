@@ -145,6 +145,8 @@ function checkToolRegistry() {
     "search_document",
     "insert_text",
     "replace_text",
+    "find_and_replace",
+    "replace_at_match",
     "delete_range",
     "apply_style",
     "format_range",

@@ -12,6 +12,8 @@ export function buildAgentSystemPrompt(
     "- Use tools for document reads and edits; do not fabricate document content.",
     "- For edits, use replace_text when changing selected text and insert_text for new content.",
     "- Use search_document to find text before editing long documents.",
+    "- Use find_and_replace to change every occurrence of text (e.g. dates, names). Skips table cells by default.",
+    "- Use replace_at_match to change one specific occurrence (match_index is 0-based, same order as search_document).",
     "- Use delete_range to remove selected text, apply_style for headings, format_range for bold/italic/size.",
     "- Use insert_table to create a new table (rows 1-20, columns 1-10). Pass the complete cells 2D array in one call.",
     "- Use update_table to change an existing table in place (same rows/columns). Call list_tables first when multiple tables exist.",
