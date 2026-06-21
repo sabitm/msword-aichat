@@ -2,6 +2,8 @@ export type ContextMode = "selection" | "outline" | "none";
 
 export type TableIndexResolution = "reference" | "values_match" | "row_match" | "dimensions_match";
 
+export type TableSelectionSource = "live" | "pinned";
+
 export interface TableSelectionContext {
   tableIndex: number;
   rowIndex: number;
@@ -16,6 +18,10 @@ export interface TableSelectionContext {
   tableIndexResolution?: TableIndexResolution;
   /** True when row_index was adjusted because parentCell.rowIndex was out of range. */
   rowIndexAdjusted?: boolean;
+  /** Whether coordinates came from the live selection or the pinned bookmark. */
+  selectionSource?: TableSelectionSource;
+  /** Bookmark name when selectionSource is pinned. */
+  bookmark?: string;
 }
 
 export interface DocumentContext {
@@ -26,6 +32,9 @@ export interface DocumentContext {
   empty: boolean;
   error?: string;
   tableSelection?: TableSelectionContext | null;
+  /** True when context was read from the pinned Sync bookmark. */
+  selectionPinned?: boolean;
+  selectionBookmark?: string;
 }
 
 export const CONTEXT_MODE_LABELS: Record<ContextMode, string> = {

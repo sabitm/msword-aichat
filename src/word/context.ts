@@ -72,6 +72,10 @@ export function isWordApiAvailable(): boolean {
 function formatTableSelectionPromptHint(tableSelection: TableSelectionContext): string {
   const columnLabel =
     tableSelection.columnIndex === null ? "?" : String(tableSelection.columnIndex);
+  const pinnedNote =
+    tableSelection.selectionSource === "pinned" && tableSelection.bookmark
+      ? ` Pinned bookmark=${tableSelection.bookmark} — prefer update_table with this pin active.`
+      : "";
   return (
     "Table position (0-based): table_index=" +
     tableSelection.tableIndex +
@@ -84,24 +88,52 @@ function formatTableSelectionPromptHint(tableSelection: TableSelectionContext): 
     "x" +
     tableSelection.columns +
     (tableSelection.isUniform ? "" : ", merged headers") +
-    ". Use get_selection for row_values or update_table with start_row=row_index."
+    ". Use get_selection for row_values or update_table with start_row=row_index." +
+    pinnedNote
   );
 }
 
-export async function getSelectionText(): Promise<DocumentContext> {
+export interface GetDocumentContextOptions {
+  preferPinned?: boolean;
+}
+
+export async function getSelectionText(
+  options?: GetDocumentContextOptions,
+): Promise<DocumentContext> {
   if (!isWordApiAvailable()) {
     return emptyContext("selection", "Word APIs are unavailable outside Word.");
   }
 
   try {
-    const { readTableSelectionContext } = await import("./operations");
-    const tableSelection = await readTableSelectionContext();
-    const rawText = await Word.run(async (context) => {
-      const selection = context.document.getSelection();
-      selection.load("text");
-      await context.sync();
-      return selection.text ?? "";
-    });
+    const preferPinned = options?.preferPinned === true;
+    const { readTableSelectionContext, USER_SELECTION_BOOKMARK } = await import("./operations");
+    const { readUserSelectionBookmarkText } = await import("./ranges");
+    const tableSelection = await readTableSelectionContext(
+      preferPinned ? "pinned_or_live" : "live",
+    );
+
+    let rawText = "";
+    let selectionPinned = false;
+    let selectionBookmark: string | undefined;
+
+    if (preferPinned) {
+      const pinnedText = await readUserSelectionBookmarkText();
+      if (pinnedText !== null) {
+        rawText = pinnedText;
+        selectionPinned = true;
+        selectionBookmark = tableSelection?.bookmark ?? USER_SELECTION_BOOKMARK;
+      }
+    }
+
+    if (!selectionPinned) {
+      rawText = await Word.run(async (context) => {
+        const selection = context.document.getSelection();
+        selection.load("text");
+        await context.sync();
+        return selection.text ?? "";
+      });
+    }
+
     const trimmed = rawText.trim();
     if (!trimmed && !tableSelection) {
       return emptyContext("selection");
@@ -115,6 +147,8 @@ export async function getSelectionText(): Promise<DocumentContext> {
       truncated,
       empty: false,
       tableSelection,
+      selectionPinned,
+      selectionBookmark,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to read selection";
@@ -160,10 +194,13 @@ export async function getDocumentOutline(): Promise<DocumentContext> {
   }
 }
 
-export async function getDocumentContext(mode: ContextMode): Promise<DocumentContext> {
+export async function getDocumentContext(
+  mode: ContextMode,
+  options?: GetDocumentContextOptions,
+): Promise<DocumentContext> {
   switch (mode) {
     case "selection":
-      return getSelectionText();
+      return getSelectionText(options);
     case "outline":
       return getDocumentOutline();
     case "none":

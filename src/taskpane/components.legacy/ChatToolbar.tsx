@@ -55,6 +55,9 @@ function formatContextStatus(mode: ContextMode, context: DocumentContext, isLoad
   if (context.truncated) {
     tokenLabel += " (truncated)";
   }
+  if (mode === "selection" && context.selectionPinned) {
+    tokenLabel += " · pinned";
+  }
   if (mode === "selection" && context.tableSelection) {
     tokenLabel +=
       " · table " +
@@ -119,8 +122,8 @@ export function ChatToolbar(props: ChatToolbarProps): React.ReactElement {
         <IconButton
           className="chat-toolbar-refresh"
           iconProps={{ iconName: "Sync" }}
-          title="Refresh document context"
-          ariaLabel="Refresh context"
+          title="Pin selection and refresh context"
+          ariaLabel="Pin selection and refresh context"
           disabled={props.disabled || props.contextMode === "none" || props.isLoading}
           onClick={props.onRefresh}
         >

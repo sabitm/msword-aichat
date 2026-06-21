@@ -1,6 +1,14 @@
 import type { DocumentStyleName } from "../types/agent";
-import type { TableIndexResolution, TableSelectionContext } from "../types/context";
+import type {
+  TableIndexResolution,
+  TableSelectionContext,
+  TableSelectionSource,
+} from "../types/context";
 import { isWordApiAvailable } from "./context";
+
+export const USER_SELECTION_BOOKMARK = "msword_aichat_user_select";
+
+export type TableSelectionReadSource = "live" | "pinned" | "pinned_or_live";
 
 export class WordOperationError extends Error {
   constructor(message: string) {
@@ -330,93 +338,137 @@ async function resolveParentTableIndex(
   return { index: 0, method: "dimensions_match" };
 }
 
-export async function readTableSelectionContext(): Promise<TableSelectionContext | null> {
+async function readTableContextFromRange(
+  context: Word.RequestContext,
+  range: Word.Range,
+  selectionText: string,
+  selectionSource: TableSelectionSource,
+  bookmark?: string,
+): Promise<TableSelectionContext | null> {
+  const parentTable = range.parentTableOrNullObject;
+  const parentCell = range.parentTableCellOrNullObject;
+  parentTable.load("isNullObject");
+  parentCell.load("isNullObject");
+  await context.sync();
+
+  if (parentTable.isNullObject) {
+    return null;
+  }
+
+  const tables = context.document.body.tables;
+  tables.load("items");
+  parentTable.load(["values", "rowCount", "isUniform"]);
+  if (!parentCell.isNullObject) {
+    parentCell.load(["rowIndex", "value"]);
+  }
+  await context.sync();
+
+  const rawValues = (parentTable.values as string[][]) ?? [];
+  const dimensions = getTableWriteDimensions(rawValues, parentTable.rowCount);
+  const values = normalizeTableValues(rawValues, dimensions.rows, dimensions.columns);
+
+  let rawRowIndex = 0;
+  let columnIndex: number | null = null;
+  let cellText = "";
+
+  if (!parentCell.isNullObject) {
+    rawRowIndex = parentCell.rowIndex;
+    cellText = parentCell.value ?? "";
+  } else {
+    const matchedRow = findTableRowIndexBySelection(values, selectionText);
+    if (matchedRow !== null) {
+      rawRowIndex = matchedRow;
+    }
+  }
+
+  const rowResolution = resolveSelectionRowIndex(rawRowIndex, values, selectionText, cellText);
+  const rowIndex = rowResolution.rowIndex;
+  const rowValues = values[rowIndex] ? values[rowIndex].slice() : [];
+
+  const tableResolution = await resolveParentTableIndex(
+    context,
+    tables,
+    parentTable,
+    values,
+    dimensions.rows,
+    dimensions.columns,
+    rowIndex,
+    rowValues,
+  );
+
+  if (!parentCell.isNullObject) {
+    try {
+      parentCell.load("cellIndex");
+      await context.sync();
+      columnIndex = parentCell.cellIndex;
+    } catch (_cellIndexError) {
+      columnIndex = inferTableColumnIndex(values[rowIndex] ?? [], selectionText, cellText);
+    }
+  } else {
+    columnIndex = inferTableColumnIndex(values[rowIndex] ?? [], selectionText, cellText);
+  }
+
+  return {
+    tableIndex: tableResolution.index,
+    rowIndex,
+    columnIndex,
+    rows: dimensions.rows,
+    columns: dimensions.columns,
+    isUniform: parentTable.isUniform !== false,
+    selectionText,
+    cellText,
+    rowValues,
+    tableIndexResolution: tableResolution.method,
+    rowIndexAdjusted: rowResolution.adjusted,
+    selectionSource,
+    bookmark,
+  };
+}
+
+export async function readTableSelectionContext(
+  source: TableSelectionReadSource = "pinned_or_live",
+): Promise<TableSelectionContext | null> {
   assertWordAvailable();
   try {
     return await Word.run(async (context) => {
+      if (source !== "live") {
+        const pinnedRange = context.document.getBookmarkRangeOrNullObject(USER_SELECTION_BOOKMARK);
+        pinnedRange.load(["isNullObject", "text"]);
+        await context.sync();
+        if (!pinnedRange.isNullObject) {
+          const pinnedContext = await readTableContextFromRange(
+            context,
+            pinnedRange,
+            pinnedRange.text ?? "",
+            "pinned",
+            USER_SELECTION_BOOKMARK,
+          );
+          if (pinnedContext) {
+            return pinnedContext;
+          }
+        }
+        if (source === "pinned") {
+          return null;
+        }
+      }
+
       const selection = context.document.getSelection();
-      const parentTable = selection.parentTableOrNullObject;
-      const parentCell = selection.parentTableCellOrNullObject;
-      parentTable.load("isNullObject");
-      parentCell.load("isNullObject");
       selection.load("text");
       await context.sync();
-
-      if (parentTable.isNullObject) {
-        return null;
-      }
-
-      const tables = context.document.body.tables;
-      tables.load("items");
-      parentTable.load(["values", "rowCount", "isUniform"]);
-      if (!parentCell.isNullObject) {
-        parentCell.load(["rowIndex", "value"]);
-      }
-      await context.sync();
-
-      const rawValues = (parentTable.values as string[][]) ?? [];
-      const dimensions = getTableWriteDimensions(rawValues, parentTable.rowCount);
-      const values = normalizeTableValues(rawValues, dimensions.rows, dimensions.columns);
-      const selectionText = selection.text ?? "";
-
-      let rawRowIndex = 0;
-      let columnIndex: number | null = null;
-      let cellText = "";
-
-      if (!parentCell.isNullObject) {
-        rawRowIndex = parentCell.rowIndex;
-        cellText = parentCell.value ?? "";
-      } else {
-        const matchedRow = findTableRowIndexBySelection(values, selectionText);
-        if (matchedRow !== null) {
-          rawRowIndex = matchedRow;
-        }
-      }
-
-      const rowResolution = resolveSelectionRowIndex(rawRowIndex, values, selectionText, cellText);
-      const rowIndex = rowResolution.rowIndex;
-      const rowValues = values[rowIndex] ? values[rowIndex].slice() : [];
-
-      const tableResolution = await resolveParentTableIndex(
+      return readTableContextFromRange(
         context,
-        tables,
-        parentTable,
-        values,
-        dimensions.rows,
-        dimensions.columns,
-        rowIndex,
-        rowValues,
+        selection,
+        selection.text ?? "",
+        "live",
       );
-
-      if (!parentCell.isNullObject) {
-        try {
-          parentCell.load("cellIndex");
-          await context.sync();
-          columnIndex = parentCell.cellIndex;
-        } catch (_cellIndexError) {
-          columnIndex = inferTableColumnIndex(values[rowIndex] ?? [], selectionText, cellText);
-        }
-      } else {
-        columnIndex = inferTableColumnIndex(values[rowIndex] ?? [], selectionText, cellText);
-      }
-
-      return {
-        tableIndex: tableResolution.index,
-        rowIndex,
-        columnIndex,
-        rows: dimensions.rows,
-        columns: dimensions.columns,
-        isUniform: parentTable.isUniform !== false,
-        selectionText,
-        cellText,
-        rowValues,
-        tableIndexResolution: tableResolution.method,
-        rowIndexAdjusted: rowResolution.adjusted,
-      };
     });
   } catch (error) {
     wrapWordError(error, "Failed to read table selection context.");
   }
+}
+
+export async function readPinnedTableSelectionContext(): Promise<TableSelectionContext | null> {
+  return readTableSelectionContext("pinned");
 }
 
 export async function selectionContainsTable(): Promise<boolean> {

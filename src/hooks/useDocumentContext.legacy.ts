@@ -1,6 +1,7 @@
 import * as React from "react";
 import type { ContextMode, DocumentContext } from "../types/context";
 import { getDocumentContext } from "../word/context";
+import { upsertUserSelectionBookmark } from "../word/ranges";
 
 var EMPTY_PREVIEW: DocumentContext = {
   mode: "none",
@@ -14,6 +15,7 @@ export function useDocumentContext(mode: ContextMode): {
   context: DocumentContext;
   isLoading: boolean;
   refresh: () => void;
+  pinAndRefresh: () => void;
 } {
   var _a = React.useState<DocumentContext>(EMPTY_PREVIEW);
   var context = _a[0];
@@ -39,6 +41,34 @@ export function useDocumentContext(mode: ContextMode): {
       });
   }, [mode]);
 
+  var pinAndRefresh = React.useCallback(function () {
+    if (mode === "none") {
+      setContext(Object.assign({}, EMPTY_PREVIEW, { mode: "none" }));
+      return;
+    }
+
+    setIsLoading(true);
+    upsertUserSelectionBookmark()
+      .then(function () {
+        return getDocumentContext(mode, { preferPinned: true });
+      })
+      .then(function (next) {
+        setContext(next);
+      })
+      .catch(function (error) {
+        const message = error instanceof Error ? error.message : "Failed to pin selection";
+        setContext(
+          Object.assign({}, EMPTY_PREVIEW, {
+            mode: mode,
+            error: message,
+          }),
+        );
+      })
+      .then(function () {
+        setIsLoading(false);
+      });
+  }, [mode]);
+
   React.useEffect(function () {
     refresh();
   }, [refresh]);
@@ -47,5 +77,6 @@ export function useDocumentContext(mode: ContextMode): {
     context: context,
     isLoading: isLoading,
     refresh: refresh,
+    pinAndRefresh: pinAndRefresh,
   };
 }

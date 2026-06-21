@@ -1,6 +1,8 @@
 import type { FindReplaceMatchSnapshot } from "../types/agent";
 import { isWordApiAvailable } from "./context";
-import { WordOperationError } from "./operations";
+import { USER_SELECTION_BOOKMARK, WordOperationError } from "./operations";
+
+export { USER_SELECTION_BOOKMARK };
 
 export function bookmarkNameForEdit(editId: string): string {
   return `msword_aichat_${editId.replace(/[^a-zA-Z0-9]/g, "_")}`;
@@ -40,6 +42,59 @@ function wrapWordError(error: unknown, fallback: string): never {
     );
   }
   throw new WordOperationError(message);
+}
+
+export async function upsertUserSelectionBookmark(): Promise<{ bookmark: string; text: string }> {
+  assertWordAvailable();
+
+  try {
+    return await Word.run(async (context) => {
+      const selection = context.document.getSelection();
+      selection.load("text");
+      await context.sync();
+
+      const text = selection.text ?? "";
+      selection.insertBookmark(USER_SELECTION_BOOKMARK);
+      await context.sync();
+
+      return { bookmark: USER_SELECTION_BOOKMARK, text };
+    });
+  } catch (error) {
+    wrapWordError(error, "Failed to pin the current selection.");
+  }
+}
+
+export async function isUserSelectionBookmarkPresent(): Promise<boolean> {
+  assertWordAvailable();
+
+  try {
+    return await Word.run(async (context) => {
+      const range = context.document.getBookmarkRangeOrNullObject(USER_SELECTION_BOOKMARK);
+      range.load("isNullObject");
+      await context.sync();
+      return !range.isNullObject;
+    });
+  } catch (_error) {
+    return false;
+  }
+}
+
+export async function readUserSelectionBookmarkText(): Promise<string | null> {
+  assertWordAvailable();
+
+  try {
+    return await Word.run(async (context) => {
+      const range = context.document.getBookmarkRangeOrNullObject(USER_SELECTION_BOOKMARK);
+      range.load(["isNullObject", "text"]);
+      await context.sync();
+      if (range.isNullObject) {
+        return null;
+      }
+      return range.text ?? "";
+    });
+  } catch (_error) {
+    return null;
+  }
 }
 
 export async function captureSelectionBookmark(

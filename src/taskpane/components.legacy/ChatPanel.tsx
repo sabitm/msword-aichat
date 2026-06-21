@@ -42,7 +42,7 @@ export function ChatPanel(props: ChatPanelProps): React.ReactElement {
   var documentContextState = useDocumentContext(props.contextMode);
   var context = documentContextState.context;
   var isLoading = documentContextState.isLoading;
-  var refresh = documentContextState.refresh;
+  var pinAndRefresh = documentContextState.pinAndRefresh;
 
   var panelBodyRef = React.useRef<HTMLDivElement | null>(null);
   var stickToBottomRef = React.useRef(true);
@@ -102,7 +102,7 @@ export function ChatPanel(props: ChatPanelProps): React.ReactElement {
         disabled={!isConfigured || props.isStreaming}
         onContextModeChange={props.onContextModeChange}
         onRefresh={function () {
-          refresh();
+          pinAndRefresh();
         }}
       />
       <div className="chat-panel-body-wrap">

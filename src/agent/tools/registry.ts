@@ -19,9 +19,11 @@ import {
   readSelectionStyle,
   selectionContainsTable,
   findTableIndexForRowPatch,
+  readPinnedTableSelectionContext,
   readTableAtIndex,
   readTableSelectionContext,
   resolveTableIndex,
+  USER_SELECTION_BOOKMARK,
   searchDocument,
   updateTableAtIndex,
   WordOperationError,
@@ -35,6 +37,8 @@ import {
   deleteBookmarks,
   insertAtBookmark,
   replaceBookmarkText,
+  isUserSelectionBookmarkPresent,
+  readUserSelectionBookmarkText,
   stageFindReplacements,
   type FindReplaceStageResult,
 } from "../../word/ranges";
@@ -367,14 +371,19 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "update_table",
     description:
-      "Replace cell contents of an existing table in place. Pass a full cells grid, or pass fewer rows with start_row (defaults to the selected row from get_selection). Use list_tables for the full table snapshot.",
+      "Replace cell contents of an existing table in place. When the user pinned a selection with Sync, the pinned bookmark targets the table/cell directly. Pass a full cells grid, or pass fewer rows with start_row (defaults to the pinned or selected row). Use list_tables for the full table snapshot.",
     parameters: {
       type: "object",
       properties: {
+        selection_bookmark: {
+          type: "string",
+          description:
+            "Pinned selection bookmark name. Defaults to msword_aichat_user_select when the user clicked Sync.",
+        },
         table_index: {
           type: "number",
           description:
-            "0-based table index in the document. Omit to update the table containing the selection, or the first table.",
+            "0-based table index in the document. Omit when a pinned selection exists; otherwise omit to update the table containing the selection.",
         },
         start_row: {
           type: "number",
@@ -452,9 +461,13 @@ export async function executeTool(
 }
 
 async function executeGetSelection(): Promise<ToolExecutionResult> {
-  const text = await readSelectionPlain();
-  const tableSelection = await readTableSelectionContext();
+  const pinnedPresent = await isUserSelectionBookmarkPresent();
+  const pinnedText = pinnedPresent ? await readUserSelectionBookmarkText() : null;
+  const tableSelection = await readTableSelectionContext(pinnedPresent ? "pinned_or_live" : "live");
+  const liveText = await readSelectionPlain();
+  const text = pinnedText !== null ? pinnedText : liveText;
   const inTable = tableSelection !== null;
+  const selectionPinned = pinnedText !== null;
   return {
     success: true,
     output: {
@@ -462,6 +475,10 @@ async function executeGetSelection(): Promise<ToolExecutionResult> {
       empty: !text.trim(),
       length: text.length,
       inTable,
+      selection_pinned: selectionPinned,
+      ...(selectionPinned
+        ? { selection_bookmark: tableSelection?.bookmark ?? USER_SELECTION_BOOKMARK }
+        : {}),
       ...(tableSelection
         ? {
             table_index: tableSelection.tableIndex,
@@ -473,12 +490,20 @@ async function executeGetSelection(): Promise<ToolExecutionResult> {
             row_values: tableSelection.rowValues,
             table_index_resolution: tableSelection.tableIndexResolution,
             row_index_adjusted: tableSelection.rowIndexAdjusted === true,
+            selection_source: tableSelection.selectionSource,
             hint:
-              tableSelection.tableIndexResolution === "reference"
-                ? "Selection is inside a table. Call list_tables for the full grid, then update_table with start_row = row_index to patch rows from the selection (or pass a full cells grid). Do not use replace_text."
-                : "Selection is inside a table, but table_index was resolved by matching table content — verify list_tables before update_table. Use start_row = row_index for partial patches. Do not use replace_text.",
+              tableSelection.selectionSource === "pinned"
+                ? "Pinned selection from Sync bookmark — update_table targets this table/cell. Use start_row = row_index for partial patches. Do not use replace_text."
+                : tableSelection.tableIndexResolution === "reference"
+                  ? "Selection is inside a table. Click Sync to pin the cell before editing. Call list_tables for the full grid, then update_table with start_row = row_index. Do not use replace_text."
+                  : "Selection is inside a table, but table_index was resolved by matching table content — click Sync to pin, or verify list_tables before update_table. Do not use replace_text.",
           }
-        : {}),
+        : selectionPinned
+          ? {
+              hint:
+                "Pinned plain-text selection. Use replace_text or other text tools — not update_table.",
+            }
+          : {}),
     },
   };
 }
@@ -904,38 +929,50 @@ async function executeUpdateTable(
     return failure("update_table", "cells 2D array is required");
   }
 
-  let tableIndex: number;
-  try {
-    const requested =
-      args.table_index !== undefined && args.table_index !== null
-        ? Math.floor(args.table_index)
-        : undefined;
-    tableIndex = await resolveTableIndex(requested);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not find a table to update.";
-    return failure("update_table", message);
-  }
-
   let startRow =
     args.start_row !== undefined && args.start_row !== null ? Math.floor(args.start_row) : null;
-  if (startRow === null) {
-    const tableSelection = await readTableSelectionContext();
-    if (tableSelection) {
-      startRow = tableSelection.rowIndex;
-      if (
-        args.table_index === undefined ||
-        args.table_index === null ||
-        tableSelection.tableIndexResolution !== "reference"
-      ) {
-        tableIndex = tableSelection.tableIndex;
+
+  const pinnedTable = await readPinnedTableSelectionContext();
+  let tableIndex: number;
+  if (pinnedTable) {
+    tableIndex = pinnedTable.tableIndex;
+    if (startRow === null) {
+      startRow = pinnedTable.rowIndex;
+    }
+  } else {
+    try {
+      const requested =
+        args.table_index !== undefined && args.table_index !== null
+          ? Math.floor(args.table_index)
+          : undefined;
+      tableIndex = await resolveTableIndex(requested);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not find a table to update.";
+      return failure(
+        "update_table",
+        `${message} Click Sync in the task pane to pin a table cell first.`,
+      );
+    }
+
+    if (startRow === null) {
+      const tableSelection = await readTableSelectionContext("live");
+      if (tableSelection) {
+        startRow = tableSelection.rowIndex;
+        if (
+          args.table_index === undefined ||
+          args.table_index === null ||
+          tableSelection.tableIndexResolution !== "reference"
+        ) {
+          tableIndex = tableSelection.tableIndex;
+        }
       }
     }
-  }
 
-  if (startRow !== null && startRow >= 0 && args.cells.length > 0) {
-    const correctedIndex = await findTableIndexForRowPatch(tableIndex, startRow, args.cells);
-    if (correctedIndex !== null) {
-      tableIndex = correctedIndex;
+    if (startRow !== null && startRow >= 0 && args.cells.length > 0) {
+      const correctedIndex = await findTableIndexForRowPatch(tableIndex, startRow, args.cells);
+      if (correctedIndex !== null) {
+        tableIndex = correctedIndex;
+      }
     }
   }
 
