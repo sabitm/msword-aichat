@@ -59,11 +59,16 @@ function formatContextStatus(mode: ContextMode, context: DocumentContext, isLoad
     tokenLabel += " · pinned";
   }
   if (mode === "selection" && context.tableSelection) {
-    tokenLabel +=
-      " · table " +
-      (context.tableSelection.tableIndex + 1) +
-      ", row " +
-      (context.tableSelection.rowIndex + 1);
+    var tableSelection = context.tableSelection;
+    var rowLabel =
+      tableSelection.rowIndexEnd !== undefined &&
+      tableSelection.rowIndexEnd !== tableSelection.rowIndex
+        ? "rows " +
+          (tableSelection.rowIndex + 1) +
+          "-" +
+          (tableSelection.rowIndexEnd + 1)
+        : "row " + (tableSelection.rowIndex + 1);
+    tokenLabel += " · table " + (tableSelection.tableIndex + 1) + ", " + rowLabel;
   }
   return tokenLabel;
 }

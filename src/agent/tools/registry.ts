@@ -483,7 +483,17 @@ async function executeGetSelection(): Promise<ToolExecutionResult> {
         ? {
             table_index: tableSelection.tableIndex,
             row_index: tableSelection.rowIndex,
+            ...(tableSelection.rowIndexEnd !== undefined
+              ? {
+                  row_index_end: tableSelection.rowIndexEnd,
+                  selected_row_count: tableSelection.selectedRowCount,
+                  selected_row_values: tableSelection.selectedRowValues,
+                }
+              : {}),
             column_index: tableSelection.columnIndex,
+            ...(tableSelection.columnIndexEnd !== undefined
+              ? { column_index_end: tableSelection.columnIndexEnd }
+              : {}),
             table_rows: tableSelection.rows,
             table_columns: tableSelection.columns,
             is_uniform: tableSelection.isUniform,
@@ -493,7 +503,7 @@ async function executeGetSelection(): Promise<ToolExecutionResult> {
             selection_source: tableSelection.selectionSource,
             hint:
               tableSelection.selectionSource === "pinned"
-                ? "Pinned selection from Sync bookmark — update_table targets this table/cell. Use start_row = row_index for partial patches. Do not use replace_text."
+                ? "Pinned selection from Sync bookmark — update_table targets this table. Multi-row pin: row_index..row_index_end. Use start_row = row_index for partial row patches or pass a full cells grid. Do not use replace_text."
                 : tableSelection.tableIndexResolution === "reference"
                   ? "Selection is inside a table. Click Sync to pin the cell before editing. Call list_tables for the full grid, then update_table with start_row = row_index. Do not use replace_text."
                   : "Selection is inside a table, but table_index was resolved by matching table content — click Sync to pin, or verify list_tables before update_table. Do not use replace_text.",

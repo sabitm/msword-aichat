@@ -76,13 +76,27 @@ function formatTableSelectionPromptHint(tableSelection: TableSelectionContext): 
     tableSelection.selectionSource === "pinned" && tableSelection.bookmark
       ? ` Pinned bookmark=${tableSelection.bookmark} — prefer update_table with this pin active.`
       : "";
+  const rowLabel =
+    tableSelection.rowIndexEnd !== undefined &&
+    tableSelection.rowIndexEnd !== tableSelection.rowIndex
+      ? "row_index=" +
+        tableSelection.rowIndex +
+        "-" +
+        tableSelection.rowIndexEnd
+      : "row_index=" + tableSelection.rowIndex;
+  const columnEndLabel =
+    tableSelection.columnIndexEnd !== undefined &&
+    tableSelection.columnIndex !== null &&
+    tableSelection.columnIndexEnd !== tableSelection.columnIndex
+      ? columnLabel + "-" + tableSelection.columnIndexEnd
+      : columnLabel;
   return (
     "Table position (0-based): table_index=" +
     tableSelection.tableIndex +
-    ", row_index=" +
-    tableSelection.rowIndex +
+    ", " +
+    rowLabel +
     ", column_index=" +
-    columnLabel +
+    columnEndLabel +
     ", size=" +
     tableSelection.rows +
     "x" +

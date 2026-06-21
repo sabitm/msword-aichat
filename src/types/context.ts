@@ -6,14 +6,23 @@ export type TableSelectionSource = "live" | "pinned";
 
 export interface TableSelectionContext {
   tableIndex: number;
+  /** 0-based first selected row (inclusive). */
   rowIndex: number;
+  /** 0-based last selected row when a multi-row range is pinned or selected. */
+  rowIndexEnd?: number;
   columnIndex: number | null;
+  /** 0-based last selected column for multi-cell ranges. */
+  columnIndexEnd?: number;
+  /** Number of table rows covered by the selection (1 for a single cell). */
+  selectedRowCount?: number;
   rows: number;
   columns: number;
   isUniform: boolean;
   selectionText: string;
   cellText: string;
   rowValues: string[];
+  /** Cell values for each row in a multi-row selection, when available. */
+  selectedRowValues?: string[][];
   /** How table_index was resolved when parentTable is not a direct body.tables reference. */
   tableIndexResolution?: TableIndexResolution;
   /** True when row_index was adjusted because parentCell.rowIndex was out of range. */

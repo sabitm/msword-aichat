@@ -338,39 +338,110 @@ async function resolveParentTableIndex(
   return { index: 0, method: "dimensions_match" };
 }
 
-async function readTableContextFromRange(
+interface TableRowSpanResolution {
+  startRow: number;
+  endRow: number;
+  startColumn: number | null;
+  endColumn: number | null;
+  cellText: string;
+  adjusted: boolean;
+}
+
+async function loadTableCellColumnIndex(
+  context: Word.RequestContext,
+  cell: Word.TableCell,
+  rowValues: string[],
+  selectionText: string,
+  cellText: string,
+): Promise<number | null> {
+  try {
+    cell.load("cellIndex");
+    await context.sync();
+    return cell.cellIndex;
+  } catch (_cellIndexError) {
+    return inferTableColumnIndex(rowValues, selectionText, cellText);
+  }
+}
+
+async function resolveTableRowSpanFromRange(
   context: Word.RequestContext,
   range: Word.Range,
+  values: string[][],
   selectionText: string,
-  selectionSource: TableSelectionSource,
-  bookmark?: string,
-): Promise<TableSelectionContext | null> {
-  const parentTable = range.parentTableOrNullObject;
+): Promise<TableRowSpanResolution> {
+  const rangeStart = range.getRange(Word.RangeLocation.start);
+  const rangeEnd = range.getRange(Word.RangeLocation.end);
+  const startCell = rangeStart.parentTableCellOrNullObject;
+  const endCell = rangeEnd.parentTableCellOrNullObject;
+  startCell.load(["isNullObject", "rowIndex", "value"]);
+  endCell.load(["isNullObject", "rowIndex", "value"]);
+  await context.sync();
+
+  if (!startCell.isNullObject && !endCell.isNullObject) {
+    let startRow = startCell.rowIndex;
+    let endRow = endCell.rowIndex;
+    const startCellText = startCell.value ?? "";
+    const endCellText = endCell.value ?? "";
+
+    if (startRow > endRow) {
+      const swapRow = startRow;
+      startRow = endRow;
+      endRow = swapRow;
+    }
+
+    const startResolution = resolveSelectionRowIndex(
+      startRow,
+      values,
+      selectionText,
+      startCellText,
+    );
+    const endResolution = resolveSelectionRowIndex(endRow, values, selectionText, endCellText);
+
+    let resolvedStartRow = startResolution.rowIndex;
+    let resolvedEndRow = endResolution.rowIndex;
+    if (resolvedStartRow > resolvedEndRow) {
+      const swapResolved = resolvedStartRow;
+      resolvedStartRow = resolvedEndRow;
+      resolvedEndRow = swapResolved;
+    }
+
+    let startColumn = await loadTableCellColumnIndex(
+      context,
+      startCell,
+      values[resolvedStartRow] ?? [],
+      selectionText,
+      startCellText,
+    );
+    let endColumn = await loadTableCellColumnIndex(
+      context,
+      endCell,
+      values[resolvedEndRow] ?? [],
+      selectionText,
+      endCellText,
+    );
+
+    if (startColumn !== null && endColumn !== null && startColumn > endColumn) {
+      const swapColumn = startColumn;
+      startColumn = endColumn;
+      endColumn = swapColumn;
+    }
+
+    return {
+      startRow: resolvedStartRow,
+      endRow: resolvedEndRow,
+      startColumn,
+      endColumn,
+      cellText: startCellText,
+      adjusted: startResolution.adjusted || endResolution.adjusted,
+    };
+  }
+
   const parentCell = range.parentTableCellOrNullObject;
-  parentTable.load("isNullObject");
-  parentCell.load("isNullObject");
+  parentCell.load(["isNullObject", "rowIndex", "value"]);
   await context.sync();
-
-  if (parentTable.isNullObject) {
-    return null;
-  }
-
-  const tables = context.document.body.tables;
-  tables.load("items");
-  parentTable.load(["values", "rowCount", "isUniform"]);
-  if (!parentCell.isNullObject) {
-    parentCell.load(["rowIndex", "value"]);
-  }
-  await context.sync();
-
-  const rawValues = (parentTable.values as string[][]) ?? [];
-  const dimensions = getTableWriteDimensions(rawValues, parentTable.rowCount);
-  const values = normalizeTableValues(rawValues, dimensions.rows, dimensions.columns);
 
   let rawRowIndex = 0;
-  let columnIndex: number | null = null;
   let cellText = "";
-
   if (!parentCell.isNullObject) {
     rawRowIndex = parentCell.rowIndex;
     cellText = parentCell.value ?? "";
@@ -382,8 +453,65 @@ async function readTableContextFromRange(
   }
 
   const rowResolution = resolveSelectionRowIndex(rawRowIndex, values, selectionText, cellText);
-  const rowIndex = rowResolution.rowIndex;
+  const columnIndex = !parentCell.isNullObject
+    ? await loadTableCellColumnIndex(
+        context,
+        parentCell,
+        values[rowResolution.rowIndex] ?? [],
+        selectionText,
+        cellText,
+      )
+    : inferTableColumnIndex(values[rowResolution.rowIndex] ?? [], selectionText, cellText);
+
+  return {
+    startRow: rowResolution.rowIndex,
+    endRow: rowResolution.rowIndex,
+    startColumn: columnIndex,
+    endColumn: columnIndex,
+    cellText,
+    adjusted: rowResolution.adjusted,
+  };
+}
+
+function collectSelectedRowValues(values: string[][], startRow: number, endRow: number): string[][] {
+  const rows: string[][] = [];
+  for (let rowIndex = startRow; rowIndex <= endRow; rowIndex += 1) {
+    rows.push(values[rowIndex] ? values[rowIndex].slice() : []);
+  }
+  return rows;
+}
+
+async function readTableContextFromRange(
+  context: Word.RequestContext,
+  range: Word.Range,
+  selectionText: string,
+  selectionSource: TableSelectionSource,
+  bookmark?: string,
+): Promise<TableSelectionContext | null> {
+  const parentTable = range.parentTableOrNullObject;
+  parentTable.load("isNullObject");
+  await context.sync();
+
+  if (parentTable.isNullObject) {
+    return null;
+  }
+
+  const tables = context.document.body.tables;
+  tables.load("items");
+  parentTable.load(["values", "rowCount", "isUniform"]);
+  await context.sync();
+
+  const rawValues = (parentTable.values as string[][]) ?? [];
+  const dimensions = getTableWriteDimensions(rawValues, parentTable.rowCount);
+  const values = normalizeTableValues(rawValues, dimensions.rows, dimensions.columns);
+
+  const rowSpan = await resolveTableRowSpanFromRange(context, range, values, selectionText);
+  const rowIndex = rowSpan.startRow;
+  const rowIndexEnd = rowSpan.endRow;
   const rowValues = values[rowIndex] ? values[rowIndex].slice() : [];
+  const selectedRowCount = rowIndexEnd - rowIndex + 1;
+  const selectedRowValues =
+    selectedRowCount > 1 ? collectSelectedRowValues(values, rowIndex, rowIndexEnd) : undefined;
 
   const tableResolution = await resolveParentTableIndex(
     context,
@@ -396,30 +524,27 @@ async function readTableContextFromRange(
     rowValues,
   );
 
-  if (!parentCell.isNullObject) {
-    try {
-      parentCell.load("cellIndex");
-      await context.sync();
-      columnIndex = parentCell.cellIndex;
-    } catch (_cellIndexError) {
-      columnIndex = inferTableColumnIndex(values[rowIndex] ?? [], selectionText, cellText);
-    }
-  } else {
-    columnIndex = inferTableColumnIndex(values[rowIndex] ?? [], selectionText, cellText);
-  }
-
   return {
     tableIndex: tableResolution.index,
     rowIndex,
-    columnIndex,
+    rowIndexEnd: rowIndexEnd !== rowIndex ? rowIndexEnd : undefined,
+    columnIndex: rowSpan.startColumn,
+    columnIndexEnd:
+      rowSpan.endColumn !== null &&
+      rowSpan.startColumn !== null &&
+      rowSpan.endColumn !== rowSpan.startColumn
+        ? rowSpan.endColumn
+        : undefined,
+    selectedRowCount: selectedRowCount > 1 ? selectedRowCount : undefined,
     rows: dimensions.rows,
     columns: dimensions.columns,
     isUniform: parentTable.isUniform !== false,
     selectionText,
-    cellText,
+    cellText: rowSpan.cellText,
     rowValues,
+    selectedRowValues,
     tableIndexResolution: tableResolution.method,
-    rowIndexAdjusted: rowResolution.adjusted,
+    rowIndexAdjusted: rowSpan.adjusted,
     selectionSource,
     bookmark,
   };
