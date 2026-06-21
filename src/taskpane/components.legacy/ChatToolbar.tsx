@@ -51,12 +51,18 @@ function formatContextStatus(mode: ContextMode, context: DocumentContext, isLoad
   if (context.empty) {
     return mode === "selection" ? "No text selected" : "No headings found";
   }
-  return (
-    "~" +
-    context.tokenEstimate.toLocaleString() +
-    " tokens" +
-    (context.truncated ? " (truncated)" : "")
-  );
+  var tokenLabel = "~" + context.tokenEstimate.toLocaleString() + " tokens";
+  if (context.truncated) {
+    tokenLabel += " (truncated)";
+  }
+  if (mode === "selection" && context.tableSelection) {
+    tokenLabel +=
+      " · table " +
+      (context.tableSelection.tableIndex + 1) +
+      ", row " +
+      (context.tableSelection.rowIndex + 1);
+  }
+  return tokenLabel;
 }
 
 export function ChatToolbar(props: ChatToolbarProps): React.ReactElement {

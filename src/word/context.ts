@@ -69,18 +69,22 @@ export function isWordApiAvailable(): boolean {
   return typeof Word !== "undefined";
 }
 
-function formatTableSelectionBlock(tableSelection: TableSelectionContext): string {
+function formatTableSelectionPromptHint(tableSelection: TableSelectionContext): string {
   const columnLabel =
-    tableSelection.columnIndex === null ? "unknown" : String(tableSelection.columnIndex);
+    tableSelection.columnIndex === null ? "?" : String(tableSelection.columnIndex);
   return (
-    "Table selection (0-based indices):\n" +
-    `- table_index: ${tableSelection.tableIndex}\n` +
-    `- row_index: ${tableSelection.rowIndex}\n` +
-    `- column_index: ${columnLabel}\n` +
-    `- table size: ${tableSelection.rows}x${tableSelection.columns}\n` +
-    `- isUniform: ${tableSelection.isUniform}\n` +
-    `- row values: ${JSON.stringify(tableSelection.rowValues)}\n` +
-    "Use update_table with start_row = row_index to patch rows from the selection, or pass a full cells grid."
+    "Table position (0-based): table_index=" +
+    tableSelection.tableIndex +
+    ", row_index=" +
+    tableSelection.rowIndex +
+    ", column_index=" +
+    columnLabel +
+    ", size=" +
+    tableSelection.rows +
+    "x" +
+    tableSelection.columns +
+    (tableSelection.isUniform ? "" : ", merged headers") +
+    ". Use get_selection for row_values or update_table with start_row=row_index."
   );
 }
 
@@ -98,12 +102,20 @@ export async function getSelectionText(): Promise<DocumentContext> {
       await context.sync();
       return selection.text ?? "";
     });
-    const contextText = tableSelection
-      ? `${rawText}\n\n${formatTableSelectionBlock(tableSelection)}`
-      : rawText;
-    const result = finalizeContext("selection", contextText);
-    result.tableSelection = tableSelection;
-    return result;
+    const trimmed = rawText.trim();
+    if (!trimmed && !tableSelection) {
+      return emptyContext("selection");
+    }
+
+    const { text, truncated } = truncateText(trimmed);
+    return {
+      mode: "selection",
+      text,
+      tokenEstimate: estimateTokens(trimmed),
+      truncated,
+      empty: false,
+      tableSelection,
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to read selection";
     return emptyContext("selection", message);
@@ -164,19 +176,23 @@ export async function getDocumentContext(mode: ContextMode): Promise<DocumentCon
 }
 
 export function buildContextPrompt(context: DocumentContext): string | null {
-  if (context.mode === "none") {
-    return null;
-  }
-  if (context.empty && !context.tableSelection) {
-    return null;
-  }
-  if (!context.text && !context.tableSelection) {
+  if (context.mode === "none" || context.empty) {
     return null;
   }
 
   const label = context.mode === "selection" ? "Selected text" : "Document outline";
   const truncatedNote = context.truncated ? "\nNote: context was truncated to fit token limits." : "";
-  const body = context.text || "(empty selection text)";
 
-  return `${label} from the user's Word document:\n---\n${body}\n---${truncatedNote}`;
+  var parts: string[] = [];
+  if (context.text) {
+    parts.push(context.text);
+  }
+  if (context.tableSelection) {
+    parts.push(formatTableSelectionPromptHint(context.tableSelection));
+  }
+  if (!parts.length) {
+    return null;
+  }
+
+  return `${label} from the user's Word document:\n---\n${parts.join("\n\n")}\n---${truncatedNote}`;
 }
