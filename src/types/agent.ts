@@ -31,6 +31,10 @@ export interface UndoSnapshot {
   };
   tableIndex?: number;
   previousTableValues?: string[][];
+  /** Rows inserted during update_table (for undo via deleteRows). */
+  insertedRowCount?: number;
+  /** 0-based row index where inserted rows start. */
+  insertedAtRow?: number;
   matchSnapshots?: FindReplaceMatchSnapshot[];
 }
 

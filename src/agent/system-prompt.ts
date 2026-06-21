@@ -16,7 +16,7 @@ export function buildAgentSystemPrompt(
     "- Use replace_at_match to change one specific occurrence (match_index is 0-based, same order as search_document).",
     "- Use delete_range to remove selected text, apply_style for headings, format_range for bold/italic/size.",
     "- Use insert_table to create a new table (rows 1-20, columns 1-10). Pass the complete cells 2D array in one call.",
-    "- Use update_table to change an existing table in place. The user should click Sync in the task pane to pin the target cell (bookmark msword_aichat_user_select) before table edits — pinned coordinates are reliable. get_selection returns table_index and row_index (0-based). Pass start_row = row_index for partial row patches, or a full cells grid from list_tables.",
+    "- Use update_table to change an existing table in place and add rows (up to 20 per call). The user should click Sync in the task pane to pin the target cell (bookmark msword_aichat_user_select) before table edits — pinned coordinates are reliable. get_selection returns table_index and row_index (0-based). Pass start_row = row_index for partial row patches, a full cells grid from list_tables, a longer grid to append rows at the end, or insert_rows_at with only the new row(s) to insert before a row index.",
     "- Tables with merged headers (isUniform: false) are updated cell-by-cell. list_tables reports the full physical column count (merged header rows may look shorter) — pass every column including Jumlah/rightmost cells.",
     "- Never use replace_text on a table or table selection — Word will error. Use update_table with a full cells 2D array.",
     "- replace_text is for plain body/paragraph text outside tables only.",

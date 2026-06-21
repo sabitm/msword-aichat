@@ -15,7 +15,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     name: "table",
     description: "Insert a structured table",
     prompt:
-      "Create or revise a table. For a new table, call insert_table with rows, columns, and the full cells 2D array. To edit an existing table in place, call list_tables if needed, then update_table with matching dimensions and the full updated cells grid.",
+      "Create or revise a table. For a new table, call insert_table with rows, columns, and the full cells 2D array. To edit an existing table in place, call list_tables if needed, then update_table with the full updated cells grid. To add rows, pass a longer grid, use insert_rows_at with only the new row(s), or extend a start_row patch past the table end.",
   },
   {
     name: "toc",

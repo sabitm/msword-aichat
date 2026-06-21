@@ -25,7 +25,9 @@ import {
   resolveTableIndex,
   USER_SELECTION_BOOKMARK,
   searchDocument,
+  MAX_TABLE_ROW_INSERT,
   updateTableAtIndex,
+  type TableRowInsertPlan,
   WordOperationError,
 } from "../../word/operations";
 import {
@@ -371,7 +373,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "update_table",
     description:
-      "Replace cell contents of an existing table in place. When the user pinned a selection with Sync, the pinned bookmark targets the table/cell directly. Pass a full cells grid, or pass fewer rows with start_row (defaults to the pinned or selected row). Use list_tables for the full table snapshot.",
+      "Replace cell contents of an existing table in place, optionally adding rows. When the user pinned a selection with Sync, the pinned bookmark targets the table/cell directly. Pass a full cells grid from list_tables, pass a longer grid to append rows at the end, pass insert_rows_at with only the new row(s) to insert before a row index, or pass fewer rows with start_row for a partial patch (defaults to the pinned or selected row). Up to 20 rows can be added per call.",
     parameters: {
       type: "object",
       properties: {
@@ -390,6 +392,11 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           description:
             "0-based row to start writing cells when not passing a full grid. Defaults to the current table selection row.",
         },
+        insert_rows_at: {
+          type: "number",
+          description:
+            "0-based row index before which to insert new rows. Pass cells with only the new row(s). Use rows equal to the current row count to append at the end.",
+        },
         rows: {
           type: "number",
           description: "Optional row count hint (actual table size is used).",
@@ -400,7 +407,8 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         },
         cells: {
           type: "array",
-          description: "2D array of cell text values (full table or a row patch from start_row).",
+          description:
+            "2D array of cell text values: full table, extra trailing rows to grow the table, new rows only with insert_rows_at, or a row patch from start_row.",
           items: {
             type: "array",
             items: { type: "string" },
@@ -919,18 +927,176 @@ function mergeTableRowPatch(
   columns: number,
 ): string[][] | null {
   if (!patch.length || startRow < 0) return null;
+  const neededRows = startRow + patch.length;
   const merged = currentValues.map(function (row) {
     return row.slice();
   });
+  while (merged.length < neededRows) {
+    const line: string[] = [];
+    for (let colIndex = 0; colIndex < columns; colIndex += 1) {
+      line.push("");
+    }
+    merged.push(line);
+  }
   for (let patchIndex = 0; patchIndex < patch.length; patchIndex += 1) {
     const targetRow = startRow + patchIndex;
-    if (targetRow >= merged.length) break;
     const source = patch[patchIndex] ?? [];
     for (let colIndex = 0; colIndex < columns; colIndex += 1) {
       merged[targetRow][colIndex] = source[colIndex] ?? "";
     }
   }
   return merged;
+}
+
+function spliceRowsIntoGrid(
+  currentValues: string[][],
+  newRows: string[][],
+  atRow: number,
+): string[][] {
+  const merged = currentValues.map(function (row) {
+    return row.slice();
+  });
+  const insertAt = Math.min(Math.max(0, atRow), merged.length);
+  for (let index = 0; index < newRows.length; index += 1) {
+    merged.splice(insertAt + index, 0, newRows[index].slice());
+  }
+  return merged;
+}
+
+interface UpdateTablePlan {
+  normalizedCells: string[][];
+  targetRows: number;
+  rowInsert?: TableRowInsertPlan;
+  insertedAtRow?: number;
+  insertedRowCount?: number;
+}
+
+function planUpdateTable(
+  current: { rows: number; columns: number; values: string[][] },
+  cells: string[][],
+  startRow: number | null,
+  insertRowsAt: number | null,
+): UpdateTablePlan | { error: string } {
+  const rows = current.rows;
+  const columns = current.columns;
+  const values = current.values;
+
+  if (insertRowsAt !== null && cells.length < rows) {
+    const requestedAt = Math.max(0, Math.floor(insertRowsAt));
+    const count = cells.length;
+    if (count < 1) {
+      return { error: "cells must include at least one row to insert" };
+    }
+    if (count > MAX_TABLE_ROW_INSERT) {
+      return {
+        error: `Cannot insert more than ${MAX_TABLE_ROW_INSERT} rows per update_table call.`,
+      };
+    }
+
+    const newRows = normalizeUpdateTableCells(cells, count, columns);
+    if (!newRows) {
+      return { error: "cells 2D array is required" };
+    }
+
+    const append = requestedAt >= rows;
+    const rowInsert: TableRowInsertPlan = append
+      ? {
+          atRow: Math.max(0, rows - 1),
+          count,
+          mode: "after",
+          rowValues: newRows,
+        }
+      : {
+          atRow: requestedAt,
+          count,
+          mode: "before",
+          rowValues: newRows,
+        };
+    const insertedAtRow = append ? rows : requestedAt;
+
+    return {
+      normalizedCells: spliceRowsIntoGrid(values, newRows, insertedAtRow),
+      targetRows: rows + count,
+      rowInsert,
+      insertedAtRow,
+      insertedRowCount: count,
+    };
+  }
+
+  if (cells.length > rows) {
+    const added = cells.length - rows;
+    if (added > MAX_TABLE_ROW_INSERT) {
+      return {
+        error: `Cannot add more than ${MAX_TABLE_ROW_INSERT} rows per update_table call.`,
+      };
+    }
+    const normalizedCells = normalizeUpdateTableCells(cells, cells.length, columns);
+    if (!normalizedCells) {
+      return { error: "cells 2D array is required" };
+    }
+    return {
+      normalizedCells,
+      targetRows: cells.length,
+      rowInsert: {
+        atRow: Math.max(0, rows - 1),
+        count: added,
+        mode: "after",
+        rowValues: normalizedCells.slice(rows),
+      },
+      insertedAtRow: rows,
+      insertedRowCount: added,
+    };
+  }
+
+  if (cells.length === rows) {
+    const normalizedCells = normalizeUpdateTableCells(cells, rows, columns);
+    if (!normalizedCells) {
+      return { error: "cells 2D array is required" };
+    }
+    return { normalizedCells, targetRows: rows };
+  }
+
+  if (startRow === null || startRow < 0) {
+    return {
+      error:
+        "Partial row update needs start_row or a selection inside the target table. Call get_selection first.",
+    };
+  }
+
+  const patch = normalizeUpdateTableCells(cells, cells.length, columns);
+  if (!patch) {
+    return { error: "cells 2D array is required" };
+  }
+
+  if (startRow + cells.length > rows) {
+    const added = startRow + cells.length - rows;
+    if (added > MAX_TABLE_ROW_INSERT) {
+      return {
+        error: `Cannot add more than ${MAX_TABLE_ROW_INSERT} rows per update_table call.`,
+      };
+    }
+    const normalizedCells = mergeTableRowPatch(values, patch, startRow, columns);
+    if (!normalizedCells) {
+      return { error: "cells 2D array is required" };
+    }
+    return {
+      normalizedCells,
+      targetRows: rows + added,
+      rowInsert: {
+        atRow: Math.max(0, rows - 1),
+        count: added,
+        mode: "after",
+      },
+      insertedAtRow: rows,
+      insertedRowCount: added,
+    };
+  }
+
+  const normalizedCells = mergeTableRowPatch(values, patch, startRow, columns);
+  if (!normalizedCells) {
+    return { error: "cells 2D array is required" };
+  }
+  return { normalizedCells, targetRows: rows };
 }
 
 async function executeUpdateTable(
@@ -940,6 +1106,7 @@ async function executeUpdateTable(
   const args = parseArgs<{
     table_index?: number;
     start_row?: number;
+    insert_rows_at?: number;
     rows?: number;
     columns?: number;
     cells?: string[][];
@@ -950,12 +1117,16 @@ async function executeUpdateTable(
 
   let startRow =
     args.start_row !== undefined && args.start_row !== null ? Math.floor(args.start_row) : null;
+  const insertRowsAt =
+    args.insert_rows_at !== undefined && args.insert_rows_at !== null
+      ? Math.floor(args.insert_rows_at)
+      : null;
 
   const pinnedTable = await readPinnedTableSelectionContext();
   let tableIndex: number;
   if (pinnedTable) {
     tableIndex = pinnedTable.tableIndex;
-    if (startRow === null) {
+    if (startRow === null && insertRowsAt === null) {
       startRow = pinnedTable.rowIndex;
     }
   } else {
@@ -973,7 +1144,7 @@ async function executeUpdateTable(
       );
     }
 
-    if (startRow === null) {
+    if (startRow === null && insertRowsAt === null) {
       const tableSelection = await readTableSelectionContext("live");
       if (tableSelection) {
         startRow = tableSelection.rowIndex;
@@ -987,7 +1158,7 @@ async function executeUpdateTable(
       }
     }
 
-    if (startRow !== null && startRow >= 0 && args.cells.length > 0) {
+    if (startRow !== null && startRow >= 0 && args.cells.length > 0 && insertRowsAt === null) {
       const correctedIndex = await findTableIndexForRowPatch(tableIndex, startRow, args.cells);
       if (correctedIndex !== null) {
         tableIndex = correctedIndex;
@@ -1005,54 +1176,24 @@ async function executeUpdateTable(
 
   const rows = current.rows;
   const columns = current.columns;
-  let normalizedCells: string[][] | null = null;
-
-  if (args.cells.length >= rows) {
-    normalizedCells = normalizeUpdateTableCells(args.cells, rows, columns);
-  } else {
-    if (startRow === null || startRow < 0) {
-      return failure(
-        "update_table",
-        "Partial row update needs start_row or a selection inside the target table. Call get_selection first.",
-      );
-    }
-    if (startRow + args.cells.length > rows) {
-      const tableSelection = await readTableSelectionContext();
-      const listed = await listDocumentTables(10);
-      const listSummary = listed
-        .map(function (table) {
-          return `table ${table.index}: ${table.rows}x${table.columns}`;
-        })
-        .join("; ");
-      const selectionSummary = tableSelection
-        ? `get_selection reports table_index=${tableSelection.tableIndex}, row_index=${tableSelection.rowIndex}, size=${tableSelection.rows}x${tableSelection.columns}` +
-          (tableSelection.tableIndexResolution
-            ? ` (resolved via ${tableSelection.tableIndexResolution})`
-            : "")
-        : "no table selection";
-      return failure(
-        "update_table",
-        `Patch rows ${startRow}-${startRow + args.cells.length - 1} exceed table ${tableIndex} row count (${rows}). ${selectionSummary}. list_tables: ${listSummary || "none"}. Use the table_index from list_tables whose size fits start_row.`,
-      );
-    }
-    const patch = normalizeUpdateTableCells(args.cells, args.cells.length, columns);
-    if (!patch) {
-      return failure("update_table", "cells 2D array is required");
-    }
-    normalizedCells = mergeTableRowPatch(current.values, patch, startRow, columns);
+  const plan = planUpdateTable(current, args.cells, startRow, insertRowsAt);
+  if ("error" in plan) {
+    return failure("update_table", plan.error);
   }
 
-  if (!normalizedCells) {
-    return failure("update_table", "cells 2D array is required");
-  }
-
+  const { normalizedCells, targetRows, rowInsert, insertedAtRow, insertedRowCount } = plan;
+  const rowsAdded = insertedRowCount ?? 0;
   const editId = createId();
   const captured = await captureEndBookmark(editId);
+  const sizeLabel =
+    rowsAdded > 0
+      ? `${rows}x${columns} → ${targetRows}x${columns} (+${rowsAdded} row${rowsAdded === 1 ? "" : "s"})`
+      : `${rows}x${columns}`;
 
   const pendingEdit: PendingEdit = {
     id: editId,
     toolName: "update_table",
-    description: `Update table ${tableIndex} (${rows}x${columns})`,
+    description: `Update table ${tableIndex} (${sizeLabel})`,
     before: formatTableEditPreview(current.values),
     after: formatTableEditPreview(normalizedCells),
     status: "pending",
@@ -1063,8 +1204,17 @@ async function executeUpdateTable(
       previousText: "",
       tableIndex,
       previousTableValues: current.values,
+      ...(insertedRowCount
+        ? { insertedRowCount, insertedAtRow }
+        : {}),
     },
-    payload: { tableIndex, rows, columns, cells: normalizedCells },
+    payload: {
+      tableIndex,
+      rows: targetRows,
+      columns,
+      cells: normalizedCells,
+      ...(rowInsert ? { rowInsert } : {}),
+    },
   };
 
   const applied = await applyMutationNow(pendingEdit, autoApplyEdits);
@@ -1074,9 +1224,13 @@ async function executeUpdateTable(
       output: {
         applied: true,
         tableIndex,
-        rows,
+        rows: targetRows,
         columns,
-        message: `Table ${tableIndex} updated in place.`,
+        rowsAdded,
+        message:
+          rowsAdded > 0
+            ? `Table ${tableIndex} updated and ${rowsAdded} row${rowsAdded === 1 ? "" : "s"} added.`
+            : `Table ${tableIndex} updated in place.`,
       },
     };
   }
@@ -1086,9 +1240,13 @@ async function executeUpdateTable(
     output: {
       pendingApproval: true,
       tableIndex,
-      rows,
+      rows: targetRows,
       columns,
-      message: `Table ${tableIndex} update staged for approval.`,
+      rowsAdded,
+      message:
+        rowsAdded > 0
+          ? `Table ${tableIndex} update (+${rowsAdded} row${rowsAdded === 1 ? "" : "s"}) staged for approval.`
+          : `Table ${tableIndex} update staged for approval.`,
     },
     pendingEdit,
   };
@@ -1197,6 +1355,7 @@ export async function applyPendingEdit(edit: PendingEdit): Promise<void> {
         edit.payload?.rows as number,
         edit.payload?.columns as number,
         edit.payload?.cells as string[][],
+        edit.payload?.rowInsert as TableRowInsertPlan | undefined,
       );
       break;
     default:

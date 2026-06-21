@@ -874,6 +874,15 @@ function cloneCellGrid(values: string[][]): string[][] {
 }
 
 const MAX_TABLE_PROBE_COLUMNS = 20;
+export const MAX_TABLE_ROW_INSERT = 20;
+
+export interface TableRowInsertPlan {
+  atRow: number;
+  count: number;
+  mode: "before" | "after";
+  /** When set, seed text on insert (insert-only mode). */
+  rowValues?: string[][];
+}
 
 function maxColumnCountFromValues(values: string[][], rows: number): number {
   let columns = 0;
@@ -1245,11 +1254,74 @@ export async function readTableAtIndex(tableIndex: number): Promise<DocumentTabl
   }
 }
 
+async function insertTableRowsPlan(
+  table: Word.Table,
+  context: Word.RequestContext,
+  plan: TableRowInsertPlan,
+  columns: number,
+): Promise<void> {
+  const count = Math.min(MAX_TABLE_ROW_INSERT, Math.max(1, Math.floor(plan.count)));
+  if (count < 1) return;
+
+  table.load("rowCount");
+  table.rows.load("items");
+  await context.sync();
+
+  const rowCount = table.rowCount;
+  const valueGrid = plan.rowValues?.length
+    ? normalizeCellGrid(plan.rowValues.slice(0, count), count, columns)
+    : null;
+
+  if (plan.mode === "after" && plan.atRow >= rowCount - 1) {
+    table.addRows(Word.InsertLocation.end, count, valueGrid ?? undefined);
+    await context.sync();
+    return;
+  }
+
+  if (rowCount < 1) {
+    throw new WordOperationError("Cannot insert rows into an empty table.");
+  }
+
+  const anchorIndex = Math.min(Math.max(0, plan.atRow), rowCount - 1);
+  const insertLocation =
+    plan.mode === "before" ? Word.InsertLocation.before : Word.InsertLocation.after;
+  table.rows.items[anchorIndex].insertRows(insertLocation, count, valueGrid ?? undefined);
+  await context.sync();
+}
+
+export async function deleteTableRowsAtIndex(
+  tableIndex: number,
+  rowIndex: number,
+  rowCount: number,
+): Promise<void> {
+  assertWordAvailable();
+  const count = Math.max(1, Math.floor(rowCount));
+  const index = Math.max(0, Math.floor(rowIndex));
+
+  try {
+    await Word.run(async (context) => {
+      const tables = context.document.body.tables;
+      tables.load("items");
+      await context.sync();
+
+      if (tableIndex < 0 || tableIndex >= tables.items.length) {
+        throw new WordOperationError(`Cannot delete rows: table index ${tableIndex} is out of range.`);
+      }
+
+      tables.items[tableIndex].deleteRows(index, count);
+      await context.sync();
+    });
+  } catch (error) {
+    wrapWordError(error, "Failed to delete table rows.");
+  }
+}
+
 export async function updateTableAtIndex(
   tableIndex: number,
   rows: number,
   columns: number,
   cellValues: string[][],
+  rowInsert?: TableRowInsertPlan,
 ): Promise<void> {
   assertWordAvailable();
   const grid = normalizeCellGrid(cellValues, rows, columns);
@@ -1270,6 +1342,11 @@ export async function updateTableAtIndex(
       }
 
       const table = tables.items[tableIndex];
+
+      if (rowInsert?.count) {
+        await insertTableRowsPlan(table, context, rowInsert, columns);
+      }
+
       const dimensions = await resolveTableDimensions(table, context);
 
       if (dimensions.rows !== rows || dimensions.columns !== columns) {
