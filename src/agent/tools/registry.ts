@@ -19,6 +19,7 @@ import {
   readSelectionStyle,
   selectionContainsTable,
   readTableAtIndex,
+  readTableSelectionContext,
   resolveTableIndex,
   searchDocument,
   updateTableAtIndex,
@@ -173,7 +174,8 @@ async function applyMutationNow(
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "get_selection",
-    description: "Read the currently selected text in the Word document.",
+    description:
+      "Read the currently selected text. When the selection is inside a table, also returns table_index, row_index, column_index, and the full row values.",
     parameters: { type: "object", properties: {}, additionalProperties: false },
   },
   {
@@ -364,7 +366,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "update_table",
     description:
-      "Replace cell contents of an existing table in place. Dimensions are taken from the target table; pass a full cells grid (extra/missing rows or columns are padded or trimmed). Use list_tables first.",
+      "Replace cell contents of an existing table in place. Pass a full cells grid, or pass fewer rows with start_row (defaults to the selected row from get_selection). Use list_tables for the full table snapshot.",
     parameters: {
       type: "object",
       properties: {
@@ -372,6 +374,11 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           type: "number",
           description:
             "0-based table index in the document. Omit to update the table containing the selection, or the first table.",
+        },
+        start_row: {
+          type: "number",
+          description:
+            "0-based row to start writing cells when not passing a full grid. Defaults to the current table selection row.",
         },
         rows: {
           type: "number",
@@ -383,7 +390,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         },
         cells: {
           type: "array",
-          description: "Full 2D array of replacement cell text values.",
+          description: "2D array of cell text values (full table or a row patch from start_row).",
           items: {
             type: "array",
             items: { type: "string" },
@@ -445,7 +452,8 @@ export async function executeTool(
 
 async function executeGetSelection(): Promise<ToolExecutionResult> {
   const text = await readSelectionPlain();
-  const inTable = await selectionContainsTable();
+  const tableSelection = await readTableSelectionContext();
+  const inTable = tableSelection !== null;
   return {
     success: true,
     output: {
@@ -453,8 +461,18 @@ async function executeGetSelection(): Promise<ToolExecutionResult> {
       empty: !text.trim(),
       length: text.length,
       inTable,
-      ...(inTable
-        ? { hint: "Selection is inside a table. Use list_tables and update_table, not replace_text." }
+      ...(tableSelection
+        ? {
+            table_index: tableSelection.tableIndex,
+            row_index: tableSelection.rowIndex,
+            column_index: tableSelection.columnIndex,
+            table_rows: tableSelection.rows,
+            table_columns: tableSelection.columns,
+            is_uniform: tableSelection.isUniform,
+            row_values: tableSelection.rowValues,
+            hint:
+              "Selection is inside a table. Call list_tables for the full grid, then update_table with start_row = row_index to patch rows from the selection (or pass a full cells grid). Do not use replace_text.",
+          }
         : {}),
     },
   };
@@ -845,12 +863,34 @@ function normalizeUpdateTableCells(
   return grid;
 }
 
+function mergeTableRowPatch(
+  currentValues: string[][],
+  patch: string[][],
+  startRow: number,
+  columns: number,
+): string[][] | null {
+  if (!patch.length || startRow < 0) return null;
+  const merged = currentValues.map(function (row) {
+    return row.slice();
+  });
+  for (let patchIndex = 0; patchIndex < patch.length; patchIndex += 1) {
+    const targetRow = startRow + patchIndex;
+    if (targetRow >= merged.length) break;
+    const source = patch[patchIndex] ?? [];
+    for (let colIndex = 0; colIndex < columns; colIndex += 1) {
+      merged[targetRow][colIndex] = source[colIndex] ?? "";
+    }
+  }
+  return merged;
+}
+
 async function executeUpdateTable(
   argsJson: string,
   autoApplyEdits: boolean,
 ): Promise<ToolExecutionResult> {
   const args = parseArgs<{
     table_index?: number;
+    start_row?: number;
     rows?: number;
     columns?: number;
     cells?: string[][];
@@ -881,7 +921,40 @@ async function executeUpdateTable(
 
   const rows = current.rows;
   const columns = current.columns;
-  const normalizedCells = normalizeUpdateTableCells(args.cells, rows, columns);
+  let normalizedCells: string[][] | null = null;
+
+  if (args.cells.length >= rows) {
+    normalizedCells = normalizeUpdateTableCells(args.cells, rows, columns);
+  } else {
+    let startRow =
+      args.start_row !== undefined && args.start_row !== null
+        ? Math.floor(args.start_row)
+        : null;
+    if (startRow === null) {
+      const tableSelection = await readTableSelectionContext();
+      if (tableSelection && tableSelection.tableIndex === tableIndex) {
+        startRow = tableSelection.rowIndex;
+      }
+    }
+    if (startRow === null || startRow < 0) {
+      return failure(
+        "update_table",
+        "Partial row update needs start_row or a selection inside the target table. Call get_selection first.",
+      );
+    }
+    if (startRow + args.cells.length > rows) {
+      return failure(
+        "update_table",
+        `Patch rows ${startRow}-${startRow + args.cells.length - 1} exceed table row count (${rows}).`,
+      );
+    }
+    const patch = normalizeUpdateTableCells(args.cells, args.cells.length, columns);
+    if (!patch) {
+      return failure("update_table", "cells 2D array is required");
+    }
+    normalizedCells = mergeTableRowPatch(current.values, patch, startRow, columns);
+  }
+
   if (!normalizedCells) {
     return failure("update_table", "cells 2D array is required");
   }

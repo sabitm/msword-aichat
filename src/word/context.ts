@@ -1,4 +1,4 @@
-import type { ContextMode, DocumentContext } from "../types/context";
+import type { ContextMode, DocumentContext, TableSelectionContext } from "../types/context";
 import { MAX_CONTEXT_CHARS } from "../types/context";
 
 const HEADING_STYLES = new Set([
@@ -69,19 +69,41 @@ export function isWordApiAvailable(): boolean {
   return typeof Word !== "undefined";
 }
 
+function formatTableSelectionBlock(tableSelection: TableSelectionContext): string {
+  const columnLabel =
+    tableSelection.columnIndex === null ? "unknown" : String(tableSelection.columnIndex);
+  return (
+    "Table selection (0-based indices):\n" +
+    `- table_index: ${tableSelection.tableIndex}\n` +
+    `- row_index: ${tableSelection.rowIndex}\n` +
+    `- column_index: ${columnLabel}\n` +
+    `- table size: ${tableSelection.rows}x${tableSelection.columns}\n` +
+    `- isUniform: ${tableSelection.isUniform}\n` +
+    `- row values: ${JSON.stringify(tableSelection.rowValues)}\n` +
+    "Use update_table with start_row = row_index to patch rows from the selection, or pass a full cells grid."
+  );
+}
+
 export async function getSelectionText(): Promise<DocumentContext> {
   if (!isWordApiAvailable()) {
     return emptyContext("selection", "Word APIs are unavailable outside Word.");
   }
 
   try {
+    const { readTableSelectionContext } = await import("./operations");
+    const tableSelection = await readTableSelectionContext();
     const rawText = await Word.run(async (context) => {
       const selection = context.document.getSelection();
       selection.load("text");
       await context.sync();
       return selection.text ?? "";
     });
-    return finalizeContext("selection", rawText);
+    const contextText = tableSelection
+      ? `${rawText}\n\n${formatTableSelectionBlock(tableSelection)}`
+      : rawText;
+    const result = finalizeContext("selection", contextText);
+    result.tableSelection = tableSelection;
+    return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to read selection";
     return emptyContext("selection", message);
@@ -142,12 +164,19 @@ export async function getDocumentContext(mode: ContextMode): Promise<DocumentCon
 }
 
 export function buildContextPrompt(context: DocumentContext): string | null {
-  if (context.mode === "none" || context.empty || !context.text) {
+  if (context.mode === "none") {
+    return null;
+  }
+  if (context.empty && !context.tableSelection) {
+    return null;
+  }
+  if (!context.text && !context.tableSelection) {
     return null;
   }
 
   const label = context.mode === "selection" ? "Selected text" : "Document outline";
   const truncatedNote = context.truncated ? "\nNote: context was truncated to fit token limits." : "";
+  const body = context.text || "(empty selection text)";
 
-  return `${label} from the user's Word document:\n---\n${context.text}\n---${truncatedNote}`;
+  return `${label} from the user's Word document:\n---\n${body}\n---${truncatedNote}`;
 }

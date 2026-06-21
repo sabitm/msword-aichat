@@ -1,5 +1,17 @@
 export type ContextMode = "selection" | "outline" | "none";
 
+export interface TableSelectionContext {
+  tableIndex: number;
+  rowIndex: number;
+  columnIndex: number | null;
+  rows: number;
+  columns: number;
+  isUniform: boolean;
+  selectionText: string;
+  cellText: string;
+  rowValues: string[];
+}
+
 export interface DocumentContext {
   mode: ContextMode;
   text: string;
@@ -7,6 +19,7 @@ export interface DocumentContext {
   truncated: boolean;
   empty: boolean;
   error?: string;
+  tableSelection?: TableSelectionContext | null;
 }
 
 export const CONTEXT_MODE_LABELS: Record<ContextMode, string> = {

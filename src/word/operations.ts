@@ -1,4 +1,5 @@
 import type { DocumentStyleName } from "../types/agent";
+import type { TableSelectionContext } from "../types/context";
 import { isWordApiAvailable } from "./context";
 
 export class WordOperationError extends Error {
@@ -130,6 +131,122 @@ export interface FormatOptions {
   bold?: boolean;
   italic?: boolean;
   font_size?: number;
+}
+
+function inferTableColumnIndex(
+  rowValues: string[],
+  selectionText: string,
+  cellText: string,
+): number | null {
+  const needle = (cellText || selectionText).trim();
+  if (!needle) return null;
+  for (let columnIndex = 0; columnIndex < rowValues.length; columnIndex += 1) {
+    const cell = (rowValues[columnIndex] ?? "").trim();
+    if (!cell) continue;
+    if (cell === needle || cell.indexOf(needle) >= 0 || needle.indexOf(cell) >= 0) {
+      return columnIndex;
+    }
+  }
+  return null;
+}
+
+function findTableRowIndexBySelection(values: string[][], selectionText: string): number | null {
+  const needle = selectionText.trim();
+  if (!needle) return null;
+  for (let rowIndex = 0; rowIndex < values.length; rowIndex += 1) {
+    const row = values[rowIndex] ?? [];
+    const rowText = row.join("\t");
+    if (rowText.indexOf(needle) >= 0) {
+      return rowIndex;
+    }
+    for (let columnIndex = 0; columnIndex < row.length; columnIndex += 1) {
+      const cell = (row[columnIndex] ?? "").trim();
+      if (cell && (needle.indexOf(cell) >= 0 || cell.indexOf(needle) >= 0)) {
+        return rowIndex;
+      }
+    }
+  }
+  return null;
+}
+
+export async function readTableSelectionContext(): Promise<TableSelectionContext | null> {
+  assertWordAvailable();
+  try {
+    return await Word.run(async (context) => {
+      const selection = context.document.getSelection();
+      const parentTable = selection.parentTableOrNullObject;
+      const parentCell = selection.parentTableCellOrNullObject;
+      parentTable.load("isNullObject");
+      parentCell.load("isNullObject");
+      selection.load("text");
+      await context.sync();
+
+      if (parentTable.isNullObject) {
+        return null;
+      }
+
+      const tables = context.document.body.tables;
+      tables.load("items");
+      parentTable.load(["values", "rowCount", "isUniform"]);
+      if (!parentCell.isNullObject) {
+        parentCell.load(["rowIndex", "value"]);
+      }
+      await context.sync();
+
+      let tableIndex = 0;
+      for (let index = 0; index < tables.items.length; index += 1) {
+        if (tables.items[index] === parentTable) {
+          tableIndex = index;
+          break;
+        }
+      }
+
+      const rawValues = (parentTable.values as string[][]) ?? [];
+      const dimensions = getTableWriteDimensions(rawValues, parentTable.rowCount);
+      const values = normalizeTableValues(rawValues, dimensions.rows, dimensions.columns);
+      const selectionText = selection.text ?? "";
+
+      let rowIndex = 0;
+      let columnIndex: number | null = null;
+      let cellText = "";
+
+      if (!parentCell.isNullObject) {
+        rowIndex = parentCell.rowIndex;
+        cellText = parentCell.value ?? "";
+      } else {
+        const matchedRow = findTableRowIndexBySelection(values, selectionText);
+        if (matchedRow !== null) {
+          rowIndex = matchedRow;
+        }
+      }
+
+      if (!parentCell.isNullObject) {
+        try {
+          parentCell.load("cellIndex");
+          await context.sync();
+          columnIndex = parentCell.cellIndex;
+        } catch (_cellIndexError) {
+          columnIndex = inferTableColumnIndex(values[rowIndex] ?? [], selectionText, cellText);
+        }
+      } else {
+        columnIndex = inferTableColumnIndex(values[rowIndex] ?? [], selectionText, cellText);
+      }
+
+      return {
+        tableIndex,
+        rowIndex,
+        columnIndex,
+        rows: dimensions.rows,
+        columns: dimensions.columns,
+        isUniform: parentTable.isUniform !== false,
+        selectionText,
+        cellText,
+        rowValues: values[rowIndex] ? values[rowIndex].slice() : [],
+      };
+    });
+  } catch (error) {
+    wrapWordError(error, "Failed to read table selection context.");
+  }
 }
 
 export async function selectionContainsTable(): Promise<boolean> {
