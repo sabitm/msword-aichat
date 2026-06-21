@@ -501,9 +501,13 @@ async function readTableContextFromRange(
   parentTable.load(["values", "rowCount", "isUniform"]);
   await context.sync();
 
-  const rawValues = (parentTable.values as string[][]) ?? [];
-  const dimensions = getTableWriteDimensions(rawValues, parentTable.rowCount);
-  const values = normalizeTableValues(rawValues, dimensions.rows, dimensions.columns);
+  const dimensions = await resolveTableDimensions(parentTable, context);
+  const values = await readTableValuesGrid(
+    parentTable,
+    context,
+    dimensions.rows,
+    dimensions.columns,
+  );
 
   const rowSpan = await resolveTableRowSpanFromRange(context, range, values, selectionText);
   const rowIndex = rowSpan.startRow;
@@ -869,14 +873,110 @@ function cloneCellGrid(values: string[][]): string[][] {
   return values.map((row) => row.slice());
 }
 
+const MAX_TABLE_PROBE_COLUMNS = 20;
+
+function maxColumnCountFromValues(values: string[][], rows: number): number {
+  let columns = 0;
+  for (let rowIndex = 0; rowIndex < rows; rowIndex += 1) {
+    columns = Math.max(columns, values[rowIndex]?.length ?? 0);
+  }
+  return columns;
+}
+
 /** Dimensions Word accepts for table.values writes (merged cells may return ragged rows on read). */
 function getTableWriteDimensions(
   values: string[][],
   rowCount?: number,
 ): { rows: number; columns: number } {
   const rows = rowCount !== undefined && rowCount > 0 ? rowCount : values.length;
-  const columns = rows > 0 ? (values[0]?.length ?? 0) : 0;
+  const columns = rows > 0 ? maxColumnCountFromValues(values, rows) : 0;
   return { rows, columns };
+}
+
+async function probeTableColumnCount(
+  table: Word.Table,
+  rowCount: number,
+  context: Word.RequestContext,
+): Promise<number> {
+  if (rowCount < 1) return 0;
+
+  const probes: { rowIndex: number; colIndex: number; cell: Word.TableCell }[] = [];
+  for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+    for (let colIndex = 0; colIndex < MAX_TABLE_PROBE_COLUMNS; colIndex += 1) {
+      const cell = table.getCellOrNullObject(rowIndex, colIndex);
+      probes.push({ rowIndex, colIndex, cell });
+      cell.load("isNullObject");
+    }
+  }
+  await context.sync();
+
+  let maxColumns = 0;
+  for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+    let rowColumns = 0;
+    for (let colIndex = 0; colIndex < MAX_TABLE_PROBE_COLUMNS; colIndex += 1) {
+      const probe = probes[rowIndex * MAX_TABLE_PROBE_COLUMNS + colIndex];
+      if (!probe.cell.isNullObject) {
+        rowColumns = colIndex + 1;
+      }
+    }
+    maxColumns = Math.max(maxColumns, rowColumns);
+  }
+  return maxColumns;
+}
+
+async function resolveTableDimensions(
+  table: Word.Table,
+  context: Word.RequestContext,
+): Promise<{ rows: number; columns: number }> {
+  table.load(["values", "rowCount", "isUniform"]);
+  await context.sync();
+
+  const rawValues = (table.values as string[][]) ?? [];
+  const rows = table.rowCount > 0 ? table.rowCount : rawValues.length;
+  let columns = maxColumnCountFromValues(rawValues, rows);
+
+  if (table.isUniform === false && rows > 0) {
+    const probed = await probeTableColumnCount(table, rows, context);
+    columns = Math.max(columns, probed);
+  }
+
+  return { rows, columns };
+}
+
+async function readTableValuesGrid(
+  table: Word.Table,
+  context: Word.RequestContext,
+  rows: number,
+  columns: number,
+): Promise<string[][]> {
+  table.load(["values", "isUniform"]);
+  await context.sync();
+
+  const rawValues = (table.values as string[][]) ?? [];
+
+  if (table.isUniform !== false) {
+    return normalizeTableValues(rawValues, rows, columns);
+  }
+
+  const cells: Word.TableCell[] = [];
+  const coords: { rowIndex: number; colIndex: number }[] = [];
+  for (let rowIndex = 0; rowIndex < rows; rowIndex += 1) {
+    for (let colIndex = 0; colIndex < columns; colIndex += 1) {
+      const cell = table.getCellOrNullObject(rowIndex, colIndex);
+      cells.push(cell);
+      coords.push({ rowIndex, colIndex });
+      cell.load(["isNullObject", "value"]);
+    }
+  }
+  await context.sync();
+
+  const grid = normalizeTableValues(rawValues, rows, columns);
+  for (let index = 0; index < cells.length; index += 1) {
+    if (!cells[index].isNullObject) {
+      grid[coords[index].rowIndex][coords[index].colIndex] = cells[index].value ?? "";
+    }
+  }
+  return grid;
 }
 
 function normalizeTableValues(values: string[][], rows: number, columns: number): string[][] {
@@ -962,16 +1062,21 @@ export async function listDocumentTables(maxTables = 10): Promise<DocumentTableI
 
       const infos: DocumentTableInfo[] = [];
       for (let index = 0; index < count; index += 1) {
-        const rawValues = (tables.items[index].values as string[][]) ?? [];
-        const dimensions = getTableWriteDimensions(rawValues, tables.items[index].rowCount);
-        const values = normalizeTableValues(rawValues, dimensions.rows, dimensions.columns);
+        const table = tables.items[index];
+        const dimensions = await resolveTableDimensions(table, context);
+        const values = await readTableValuesGrid(
+          table,
+          context,
+          dimensions.rows,
+          dimensions.columns,
+        );
         infos.push({
           index,
           rows: dimensions.rows,
           columns: dimensions.columns,
           values,
           preview: formatTablePreview(values),
-          isUniform: tables.items[index].isUniform,
+          isUniform: table.isUniform,
         });
       }
       return infos;
@@ -1008,12 +1113,13 @@ export async function resolveTableIndex(requested?: number): Promise<number> {
       }
 
       if (!parentTable.isNullObject) {
-        parentTable.load(["values", "rowCount"]);
-        await context.sync();
-
-        const rawValues = (parentTable.values as string[][]) ?? [];
-        const dimensions = getTableWriteDimensions(rawValues, parentTable.rowCount);
-        const values = normalizeTableValues(rawValues, dimensions.rows, dimensions.columns);
+        const dimensions = await resolveTableDimensions(parentTable, context);
+        const values = await readTableValuesGrid(
+          parentTable,
+          context,
+          dimensions.rows,
+          dimensions.columns,
+        );
         const parentCell = selection.parentTableCellOrNullObject;
         parentCell.load(["isNullObject", "rowIndex", "value"]);
         selection.load("text");
@@ -1115,12 +1221,15 @@ export async function readTableAtIndex(tableIndex: number): Promise<DocumentTabl
       }
 
       const table = tables.items[tableIndex];
-      table.load(["values", "rowCount", "isUniform"]);
+      const dimensions = await resolveTableDimensions(table, context);
+      const values = await readTableValuesGrid(
+        table,
+        context,
+        dimensions.rows,
+        dimensions.columns,
+      );
+      table.load("isUniform");
       await context.sync();
-
-      const rawValues = (table.values as string[][]) ?? [];
-      const dimensions = getTableWriteDimensions(rawValues, table.rowCount);
-      const values = normalizeTableValues(rawValues, dimensions.rows, dimensions.columns);
 
       return {
         index: tableIndex,
@@ -1161,11 +1270,7 @@ export async function updateTableAtIndex(
       }
 
       const table = tables.items[tableIndex];
-      table.load(["values", "rowCount"]);
-      await context.sync();
-
-      const current = (table.values as string[][]) ?? [];
-      const dimensions = getTableWriteDimensions(current, table.rowCount);
+      const dimensions = await resolveTableDimensions(table, context);
 
       if (dimensions.rows !== rows || dimensions.columns !== columns) {
         throw new WordOperationError(
@@ -1173,7 +1278,12 @@ export async function updateTableAtIndex(
         );
       }
 
-      const previous = normalizeTableValues(current, dimensions.rows, dimensions.columns);
+      const previous = await readTableValuesGrid(
+        table,
+        context,
+        dimensions.rows,
+        dimensions.columns,
+      );
       await writeTableValues(table, grid, previous, context);
     });
   } catch (error) {
@@ -1195,12 +1305,13 @@ export async function restoreTableAtIndex(tableIndex: number, values: string[][]
       }
 
       const table = tables.items[tableIndex];
-      table.load(["values", "rowCount"]);
-      await context.sync();
-
-      const current = (table.values as string[][]) ?? [];
-      const dimensions = getTableWriteDimensions(current, table.rowCount);
-      const previous = normalizeTableValues(current, dimensions.rows, dimensions.columns);
+      const dimensions = await resolveTableDimensions(table, context);
+      const previous = await readTableValuesGrid(
+        table,
+        context,
+        dimensions.rows,
+        dimensions.columns,
+      );
       const grid = normalizeTableValues(cloneCellGrid(values), dimensions.rows, dimensions.columns);
       await writeTableValues(table, grid, previous, context);
     });

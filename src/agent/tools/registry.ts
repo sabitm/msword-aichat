@@ -861,6 +861,9 @@ async function executeListTables(argsJson: string): Promise<ToolExecutionResult>
   const args = parseArgs<{ max_tables?: number }>(argsJson);
   const maxTables = Math.min(20, Math.max(1, Math.floor(args.max_tables ?? 10)));
   const tables = await listDocumentTables(maxTables);
+  const hasMergedHeaders = tables.some(function (table) {
+    return table.isUniform === false;
+  });
   return {
     success: true,
     output: {
@@ -873,6 +876,12 @@ async function executeListTables(argsJson: string): Promise<ToolExecutionResult>
         preview: table.preview,
         values: table.values,
       })),
+      ...(hasMergedHeaders
+        ? {
+            hint:
+              "Merged-header tables use the full physical column count (e.g. Jumlah/rightmost column). Pass all columns in update_table cells arrays.",
+          }
+        : {}),
     },
   };
 }
