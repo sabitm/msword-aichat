@@ -1,5 +1,7 @@
 export type ContextMode = "selection" | "outline" | "none";
 
+export type TableIndexResolution = "reference" | "values_match" | "row_match" | "dimensions_match";
+
 export interface TableSelectionContext {
   tableIndex: number;
   rowIndex: number;
@@ -10,6 +12,10 @@ export interface TableSelectionContext {
   selectionText: string;
   cellText: string;
   rowValues: string[];
+  /** How table_index was resolved when parentTable is not a direct body.tables reference. */
+  tableIndexResolution?: TableIndexResolution;
+  /** True when row_index was adjusted because parentCell.rowIndex was out of range. */
+  rowIndexAdjusted?: boolean;
 }
 
 export interface DocumentContext {

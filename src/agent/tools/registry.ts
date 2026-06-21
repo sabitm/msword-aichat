@@ -18,6 +18,7 @@ import {
   readSelectionPlain,
   readSelectionStyle,
   selectionContainsTable,
+  findTableIndexForRowPatch,
   readTableAtIndex,
   readTableSelectionContext,
   resolveTableIndex,
@@ -470,8 +471,12 @@ async function executeGetSelection(): Promise<ToolExecutionResult> {
             table_columns: tableSelection.columns,
             is_uniform: tableSelection.isUniform,
             row_values: tableSelection.rowValues,
+            table_index_resolution: tableSelection.tableIndexResolution,
+            row_index_adjusted: tableSelection.rowIndexAdjusted === true,
             hint:
-              "Selection is inside a table. Call list_tables for the full grid, then update_table with start_row = row_index to patch rows from the selection (or pass a full cells grid). Do not use replace_text.",
+              tableSelection.tableIndexResolution === "reference"
+                ? "Selection is inside a table. Call list_tables for the full grid, then update_table with start_row = row_index to patch rows from the selection (or pass a full cells grid). Do not use replace_text."
+                : "Selection is inside a table, but table_index was resolved by matching table content — verify list_tables before update_table. Use start_row = row_index for partial patches. Do not use replace_text.",
           }
         : {}),
     },
@@ -911,6 +916,29 @@ async function executeUpdateTable(
     return failure("update_table", message);
   }
 
+  let startRow =
+    args.start_row !== undefined && args.start_row !== null ? Math.floor(args.start_row) : null;
+  if (startRow === null) {
+    const tableSelection = await readTableSelectionContext();
+    if (tableSelection) {
+      startRow = tableSelection.rowIndex;
+      if (
+        args.table_index === undefined ||
+        args.table_index === null ||
+        tableSelection.tableIndexResolution !== "reference"
+      ) {
+        tableIndex = tableSelection.tableIndex;
+      }
+    }
+  }
+
+  if (startRow !== null && startRow >= 0 && args.cells.length > 0) {
+    const correctedIndex = await findTableIndexForRowPatch(tableIndex, startRow, args.cells);
+    if (correctedIndex !== null) {
+      tableIndex = correctedIndex;
+    }
+  }
+
   let current;
   try {
     current = await readTableAtIndex(tableIndex);
@@ -926,16 +954,6 @@ async function executeUpdateTable(
   if (args.cells.length >= rows) {
     normalizedCells = normalizeUpdateTableCells(args.cells, rows, columns);
   } else {
-    let startRow =
-      args.start_row !== undefined && args.start_row !== null
-        ? Math.floor(args.start_row)
-        : null;
-    if (startRow === null) {
-      const tableSelection = await readTableSelectionContext();
-      if (tableSelection && tableSelection.tableIndex === tableIndex) {
-        startRow = tableSelection.rowIndex;
-      }
-    }
     if (startRow === null || startRow < 0) {
       return failure(
         "update_table",
@@ -943,9 +961,22 @@ async function executeUpdateTable(
       );
     }
     if (startRow + args.cells.length > rows) {
+      const tableSelection = await readTableSelectionContext();
+      const listed = await listDocumentTables(10);
+      const listSummary = listed
+        .map(function (table) {
+          return `table ${table.index}: ${table.rows}x${table.columns}`;
+        })
+        .join("; ");
+      const selectionSummary = tableSelection
+        ? `get_selection reports table_index=${tableSelection.tableIndex}, row_index=${tableSelection.rowIndex}, size=${tableSelection.rows}x${tableSelection.columns}` +
+          (tableSelection.tableIndexResolution
+            ? ` (resolved via ${tableSelection.tableIndexResolution})`
+            : "")
+        : "no table selection";
       return failure(
         "update_table",
-        `Patch rows ${startRow}-${startRow + args.cells.length - 1} exceed table row count (${rows}).`,
+        `Patch rows ${startRow}-${startRow + args.cells.length - 1} exceed table ${tableIndex} row count (${rows}). ${selectionSummary}. list_tables: ${listSummary || "none"}. Use the table_index from list_tables whose size fits start_row.`,
       );
     }
     const patch = normalizeUpdateTableCells(args.cells, args.cells.length, columns);

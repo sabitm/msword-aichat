@@ -16,7 +16,7 @@ export function buildAgentSystemPrompt(
     "- Use replace_at_match to change one specific occurrence (match_index is 0-based, same order as search_document).",
     "- Use delete_range to remove selected text, apply_style for headings, format_range for bold/italic/size.",
     "- Use insert_table to create a new table (rows 1-20, columns 1-10). Pass the complete cells 2D array in one call.",
-    "- Use update_table to change an existing table in place. Call get_selection when the user selected table rows — it returns table_index and row_index (0-based). Pass start_row = row_index with only the new data rows, or pass a full cells grid from list_tables.",
+    "- Use update_table to change an existing table in place. Call get_selection when the user selected table rows — it returns table_index and row_index (0-based). Cross-check table_index against list_tables row counts before patching. Pass start_row = row_index with only the new data rows, or pass a full cells grid from list_tables.",
     "- Tables with merged headers (isUniform: false) are updated cell-by-cell — keep header rows identical to list_tables and only change data rows.",
     "- Never use replace_text on a table or table selection — Word will error. Use update_table with a full cells 2D array.",
     "- replace_text is for plain body/paragraph text outside tables only.",

@@ -1,5 +1,5 @@
 import type { DocumentStyleName } from "../types/agent";
-import type { TableSelectionContext } from "../types/context";
+import type { TableIndexResolution, TableSelectionContext } from "../types/context";
 import { isWordApiAvailable } from "./context";
 
 export class WordOperationError extends Error {
@@ -169,6 +169,167 @@ function findTableRowIndexBySelection(values: string[][], selectionText: string)
   return null;
 }
 
+function findTableRowIndexByCellText(values: string[][], cellText: string): number | null {
+  const needle = cellText.trim();
+  if (!needle) return null;
+  for (let rowIndex = 0; rowIndex < values.length; rowIndex += 1) {
+    const row = values[rowIndex] ?? [];
+    for (let columnIndex = 0; columnIndex < row.length; columnIndex += 1) {
+      if ((row[columnIndex] ?? "").trim() === needle) {
+        return rowIndex;
+      }
+    }
+  }
+  return null;
+}
+
+function tableRowValuesMatch(row: string[] | undefined, expected: string[]): boolean {
+  if (!row?.length || !expected.length) return false;
+  let compared = 0;
+  for (let columnIndex = 0; columnIndex < expected.length; columnIndex += 1) {
+    const expectedCell = (expected[columnIndex] ?? "").trim();
+    if (!expectedCell) continue;
+    compared += 1;
+    if ((row[columnIndex] ?? "").trim() !== expectedCell) {
+      return false;
+    }
+  }
+  return compared > 0;
+}
+
+function tableValuesEqual(left: string[][], right: string[][]): boolean {
+  if (left.length !== right.length) return false;
+  for (let rowIndex = 0; rowIndex < left.length; rowIndex += 1) {
+    const leftRow = left[rowIndex] ?? [];
+    const rightRow = right[rowIndex] ?? [];
+    if (leftRow.length !== rightRow.length) return false;
+    for (let columnIndex = 0; columnIndex < leftRow.length; columnIndex += 1) {
+      if ((leftRow[columnIndex] ?? "") !== (rightRow[columnIndex] ?? "")) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function rowPatchCompatible(existing: string[], patch: string[]): boolean {
+  const width = Math.max(existing.length, patch.length);
+  for (let columnIndex = 0; columnIndex < width; columnIndex += 1) {
+    const next = (patch[columnIndex] ?? "").trim();
+    const prev = (existing[columnIndex] ?? "").trim();
+    if (!next || !prev) continue;
+    if (next !== prev) return false;
+  }
+  return true;
+}
+
+function resolveSelectionRowIndex(
+  rawRowIndex: number,
+  values: string[][],
+  selectionText: string,
+  cellText: string,
+): { rowIndex: number; adjusted: boolean } {
+  const rows = values.length;
+  if (rows > 0 && rawRowIndex >= 0 && rawRowIndex < rows) {
+    return { rowIndex: rawRowIndex, adjusted: false };
+  }
+
+  const bySelection = findTableRowIndexBySelection(values, selectionText);
+  if (bySelection !== null) {
+    return { rowIndex: bySelection, adjusted: true };
+  }
+
+  const byCell = findTableRowIndexByCellText(values, cellText);
+  if (byCell !== null) {
+    return { rowIndex: byCell, adjusted: true };
+  }
+
+  if (rows > 0) {
+    const clamped = Math.max(0, Math.min(rawRowIndex, rows - 1));
+    return { rowIndex: clamped, adjusted: rawRowIndex !== clamped };
+  }
+
+  return { rowIndex: 0, adjusted: rawRowIndex !== 0 };
+}
+
+interface ParentTableIndexResolution {
+  index: number;
+  method: TableIndexResolution;
+}
+
+async function resolveParentTableIndex(
+  context: Word.RequestContext,
+  tables: Word.TableCollection,
+  parentTable: Word.Table,
+  parentValues: string[][],
+  rows: number,
+  columns: number,
+  rowIndex: number,
+  rowValues: string[],
+): Promise<ParentTableIndexResolution> {
+  for (let index = 0; index < tables.items.length; index += 1) {
+    if (tables.items[index] === parentTable) {
+      return { index, method: "reference" };
+    }
+  }
+
+  for (let index = 0; index < tables.items.length; index += 1) {
+    tables.items[index].load(["values", "rowCount"]);
+  }
+  await context.sync();
+
+  for (let index = 0; index < tables.items.length; index += 1) {
+    const rawValues = (tables.items[index].values as string[][]) ?? [];
+    const dimensions = getTableWriteDimensions(rawValues, tables.items[index].rowCount);
+    if (dimensions.rows !== rows || dimensions.columns !== columns) continue;
+    const values = normalizeTableValues(rawValues, dimensions.rows, dimensions.columns);
+    if (tableValuesEqual(values, parentValues)) {
+      return { index, method: "values_match" };
+    }
+  }
+
+  const rowMatchCandidates: number[] = [];
+  for (let index = 0; index < tables.items.length; index += 1) {
+    const rawValues = (tables.items[index].values as string[][]) ?? [];
+    const dimensions = getTableWriteDimensions(rawValues, tables.items[index].rowCount);
+    if (rowIndex < 0 || rowIndex >= dimensions.rows) continue;
+    const values = normalizeTableValues(rawValues, dimensions.rows, dimensions.columns);
+    if (tableRowValuesMatch(values[rowIndex], rowValues)) {
+      rowMatchCandidates.push(index);
+    }
+  }
+  if (rowMatchCandidates.length === 1) {
+    return { index: rowMatchCandidates[0], method: "row_match" };
+  }
+
+  const dimensionCandidates: number[] = [];
+  for (let index = 0; index < tables.items.length; index += 1) {
+    const rawValues = (tables.items[index].values as string[][]) ?? [];
+    const dimensions = getTableWriteDimensions(rawValues, tables.items[index].rowCount);
+    if (dimensions.rows === rows && dimensions.columns === columns) {
+      dimensionCandidates.push(index);
+    }
+  }
+  if (dimensionCandidates.length === 1) {
+    return { index: dimensionCandidates[0], method: "dimensions_match" };
+  }
+
+  let bestFit = -1;
+  for (let index = 0; index < tables.items.length; index += 1) {
+    const rawValues = (tables.items[index].values as string[][]) ?? [];
+    const dimensions = getTableWriteDimensions(rawValues, tables.items[index].rowCount);
+    if (rowIndex >= 0 && rowIndex < dimensions.rows) {
+      bestFit = index;
+      break;
+    }
+  }
+  if (bestFit >= 0) {
+    return { index: bestFit, method: "row_match" };
+  }
+
+  return { index: 0, method: "dimensions_match" };
+}
+
 export async function readTableSelectionContext(): Promise<TableSelectionContext | null> {
   assertWordAvailable();
   try {
@@ -193,32 +354,39 @@ export async function readTableSelectionContext(): Promise<TableSelectionContext
       }
       await context.sync();
 
-      let tableIndex = 0;
-      for (let index = 0; index < tables.items.length; index += 1) {
-        if (tables.items[index] === parentTable) {
-          tableIndex = index;
-          break;
-        }
-      }
-
       const rawValues = (parentTable.values as string[][]) ?? [];
       const dimensions = getTableWriteDimensions(rawValues, parentTable.rowCount);
       const values = normalizeTableValues(rawValues, dimensions.rows, dimensions.columns);
       const selectionText = selection.text ?? "";
 
-      let rowIndex = 0;
+      let rawRowIndex = 0;
       let columnIndex: number | null = null;
       let cellText = "";
 
       if (!parentCell.isNullObject) {
-        rowIndex = parentCell.rowIndex;
+        rawRowIndex = parentCell.rowIndex;
         cellText = parentCell.value ?? "";
       } else {
         const matchedRow = findTableRowIndexBySelection(values, selectionText);
         if (matchedRow !== null) {
-          rowIndex = matchedRow;
+          rawRowIndex = matchedRow;
         }
       }
+
+      const rowResolution = resolveSelectionRowIndex(rawRowIndex, values, selectionText, cellText);
+      const rowIndex = rowResolution.rowIndex;
+      const rowValues = values[rowIndex] ? values[rowIndex].slice() : [];
+
+      const tableResolution = await resolveParentTableIndex(
+        context,
+        tables,
+        parentTable,
+        values,
+        dimensions.rows,
+        dimensions.columns,
+        rowIndex,
+        rowValues,
+      );
 
       if (!parentCell.isNullObject) {
         try {
@@ -233,7 +401,7 @@ export async function readTableSelectionContext(): Promise<TableSelectionContext
       }
 
       return {
-        tableIndex,
+        tableIndex: tableResolution.index,
         rowIndex,
         columnIndex,
         rows: dimensions.rows,
@@ -241,7 +409,9 @@ export async function readTableSelectionContext(): Promise<TableSelectionContext
         isUniform: parentTable.isUniform !== false,
         selectionText,
         cellText,
-        rowValues: values[rowIndex] ? values[rowIndex].slice() : [],
+        rowValues,
+        tableIndexResolution: tableResolution.method,
+        rowIndexAdjusted: rowResolution.adjusted,
       };
     });
   } catch (error) {
@@ -661,9 +831,41 @@ export async function resolveTableIndex(requested?: number): Promise<number> {
       }
 
       if (!parentTable.isNullObject) {
-        for (let index = 0; index < tables.items.length; index += 1) {
-          if (tables.items[index] === parentTable) return index;
+        parentTable.load(["values", "rowCount"]);
+        await context.sync();
+
+        const rawValues = (parentTable.values as string[][]) ?? [];
+        const dimensions = getTableWriteDimensions(rawValues, parentTable.rowCount);
+        const values = normalizeTableValues(rawValues, dimensions.rows, dimensions.columns);
+        const parentCell = selection.parentTableCellOrNullObject;
+        parentCell.load(["isNullObject", "rowIndex", "value"]);
+        selection.load("text");
+        await context.sync();
+
+        let rowIndex = 0;
+        let rowValues: string[] = [];
+        if (!parentCell.isNullObject) {
+          const rowResolution = resolveSelectionRowIndex(
+            parentCell.rowIndex,
+            values,
+            selection.text ?? "",
+            parentCell.value ?? "",
+          );
+          rowIndex = rowResolution.rowIndex;
         }
+        rowValues = values[rowIndex] ? values[rowIndex].slice() : [];
+
+        const resolved = await resolveParentTableIndex(
+          context,
+          tables,
+          parentTable,
+          values,
+          dimensions.rows,
+          dimensions.columns,
+          rowIndex,
+          rowValues,
+        );
+        return resolved.index;
       }
 
       return 0;
@@ -671,6 +873,53 @@ export async function resolveTableIndex(requested?: number): Promise<number> {
   } catch (error) {
     wrapWordError(error, "Failed to resolve table.");
   }
+}
+
+export async function findTableIndexForRowPatch(
+  preferredIndex: number,
+  startRow: number,
+  patch: string[][],
+): Promise<number | null> {
+  assertWordAvailable();
+  const tables = await listDocumentTables(20);
+  if (!tables.length) return null;
+
+  const preferred = tables.find((table) => table.index === preferredIndex);
+  if (
+    preferred &&
+    startRow >= 0 &&
+    startRow + patch.length <= preferred.rows &&
+    rowPatchCompatible(preferred.values[startRow] ?? [], patch[0] ?? [])
+  ) {
+    return preferred.index;
+  }
+
+  const selection = await readTableSelectionContext();
+  if (selection) {
+    const selected = tables.find((table) => table.index === selection.tableIndex);
+    if (
+      selected &&
+      startRow >= 0 &&
+      startRow + patch.length <= selected.rows &&
+      rowPatchCompatible(selected.values[startRow] ?? [], patch[0] ?? [])
+    ) {
+      return selected.index;
+    }
+  }
+
+  const matches: number[] = [];
+  for (let index = 0; index < tables.length; index += 1) {
+    const table = tables[index];
+    if (startRow < 0 || startRow + patch.length > table.rows) continue;
+    if (!rowPatchCompatible(table.values[startRow] ?? [], patch[0] ?? [])) continue;
+    matches.push(table.index);
+  }
+
+  if (matches.length === 1) return matches[0];
+  if (selection && matches.indexOf(selection.tableIndex) >= 0) {
+    return selection.tableIndex;
+  }
+  return null;
 }
 
 export async function readTableAtIndex(tableIndex: number): Promise<DocumentTableInfo> {
