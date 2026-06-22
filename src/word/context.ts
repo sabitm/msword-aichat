@@ -102,7 +102,7 @@ function formatTableSelectionPromptHint(tableSelection: TableSelectionContext): 
     "x" +
     tableSelection.columns +
     (tableSelection.isUniform ? "" : ", merged headers") +
-    ". get_selection returns table_values (full grid) — use for update_table; skip list_tables if you already have it." +
+    ". Table edits: call get_selection for table_values, then update_table — do not use get_document_text for table layout." +
     pinnedNote
   );
 }

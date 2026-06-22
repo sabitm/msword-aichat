@@ -188,7 +188,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "get_document_text",
     description:
-      "Read a chunk of the document body text. Use start and max_chars to page through long documents.",
+      "Read a chunk of linear document body text (not structured tables). Use start and max_chars to page through long prose sections. Do not use for table cell layout, row counts, or verifying update_table — tables flatten to tab-separated noise; use get_selection table_values or list_tables instead.",
     parameters: {
       type: "object",
       properties: {
@@ -485,7 +485,7 @@ function buildGetSelectionTableHint(tableSelection: {
   rows: number;
 }): string {
   const gridNote =
-    "table_values is the full cell grid — pass it (or a modified copy) to update_table cells. Do not call list_tables if you already have table_values.";
+    "table_values is the full cell grid — pass it (or a modified copy) to update_table cells. Do not call list_tables or get_document_text for table layout; proceed to update_table when you have enough data.";
   if (tableSelection.selectionSource === "pinned") {
     const partial =
       tableSelection.rowIndexEnd !== undefined &&
@@ -576,6 +576,7 @@ async function executeGetDocumentText(argsJson: string): Promise<ToolExecutionRe
   const args = parseArgs<{ start?: number; max_chars?: number }>(argsJson);
   const start = Math.max(0, Math.floor(args.start ?? 0));
   const maxChars = Math.min(12_000, Math.max(1, Math.floor(args.max_chars ?? 4000)));
+  const tableSelection = await readTableSelectionContext("pinned_or_live");
   const chunk = await readBodyTextChunk(start, maxChars);
   return {
     success: true,
@@ -585,6 +586,17 @@ async function executeGetDocumentText(argsJson: string): Promise<ToolExecutionRe
       returnedLength: chunk.text.length,
       totalLength: chunk.totalLength,
       hasMore: chunk.hasMore,
+      ...(tableSelection
+        ? {
+            warning:
+              "Body text flattens tables into tab/newline-separated lines — not reliable for row/column layout. For table edits, use get_selection.table_values (structured grid) and update_table. Avoid further get_document_text calls for table verification.",
+            table_context: {
+              table_index: tableSelection.tableIndex,
+              table_rows: tableSelection.rows,
+              table_columns: tableSelection.columns,
+            },
+          }
+        : {}),
     },
   };
 }
@@ -1279,6 +1291,7 @@ async function executeUpdateTable(
           rowsAdded > 0
             ? `Table ${tableIndex} updated and ${rowsAdded} row${rowsAdded === 1 ? "" : "s"} added.`
             : `Table ${tableIndex} updated in place.`,
+        hint: "Edit complete — reply to the user. Do not call get_document_text, list_tables, or get_selection to verify table layout.",
       },
     };
   }
