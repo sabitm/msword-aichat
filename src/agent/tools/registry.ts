@@ -182,7 +182,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "get_selection",
     description:
-      "Read the currently selected text. When the selection is inside a table, also returns table_index, row_index, column_index, and the full row values.",
+      "Read the currently selected text. When the selection is inside a table, returns table_index, row/column position, table_values (full cell grid for update_table), row_values (anchor row), and selected_row_values when multiple rows are selected. Prefer table_values over list_tables when the target table is already known.",
     parameters: { type: "object", properties: {}, additionalProperties: false },
   },
   {
@@ -358,7 +358,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "list_tables",
     description:
-      "List tables in the document with index, dimensions, cell values, and a short preview. Use before update_table when multiple tables exist.",
+      "List tables in the document with index, dimensions, cell values, and a short preview. Use only when get_selection did not return table_values, when several tables must be compared, or when table_index is uncertain. Do not call again if you already have a current grid from get_selection or an earlier list_tables in this conversation.",
     parameters: {
       type: "object",
       properties: {
@@ -373,7 +373,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "update_table",
     description:
-      "Replace cell contents of an existing table in place, optionally adding rows. When the user pinned a selection with Sync, the pinned bookmark targets the table/cell directly. Pass a full cells grid from list_tables, pass a longer grid to append rows at the end, pass insert_rows_at with only the new row(s) to insert before a row index, or pass fewer rows with start_row for a partial patch (defaults to the pinned or selected row). Up to 20 rows can be added per call.",
+      "Replace cell contents of an existing table in place, optionally adding rows. When the user pinned a selection with Sync, the pinned bookmark targets the table/cell directly. Build cells from get_selection table_values or list_tables values. Pass a longer grid to append rows, insert_rows_at with only new row(s), or fewer rows with start_row for a partial patch (defaults to the pinned or selected row). Up to 20 rows can be added per call.",
     parameters: {
       type: "object",
       properties: {
@@ -468,6 +468,55 @@ export async function executeTool(
   }
 }
 
+function selectionCoversFullTable(tableSelection: {
+  rowIndex: number;
+  rowIndexEnd?: number;
+  rows: number;
+}): boolean {
+  const endRow = tableSelection.rowIndexEnd ?? tableSelection.rowIndex;
+  return endRow - tableSelection.rowIndex + 1 >= tableSelection.rows;
+}
+
+function buildGetSelectionTableHint(tableSelection: {
+  selectionSource?: string;
+  tableIndexResolution?: string;
+  rowIndex: number;
+  rowIndexEnd?: number;
+  rows: number;
+}): string {
+  const gridNote =
+    "table_values is the full cell grid — pass it (or a modified copy) to update_table cells. Do not call list_tables if you already have table_values.";
+  if (tableSelection.selectionSource === "pinned") {
+    const partial =
+      tableSelection.rowIndexEnd !== undefined &&
+      tableSelection.rowIndexEnd !== tableSelection.rowIndex &&
+      !selectionCoversFullTable(tableSelection);
+    const patchNote = partial
+      ? " Multi-row pin: use start_row = row_index for partial patches, or copy table_values for the full grid."
+      : selectionCoversFullTable(tableSelection)
+        ? " Selection covers the full table."
+        : "";
+    return (
+      "Pinned Sync bookmark — update_table targets this table. " +
+      gridNote +
+      patchNote +
+      " Do not use replace_text."
+    );
+  }
+  if (tableSelection.tableIndexResolution === "reference") {
+    return (
+      "Selection is inside a table. Click Sync to pin before editing. " +
+      gridNote +
+      " Do not use replace_text."
+    );
+  }
+  return (
+    "Selection is inside a table, but table_index was resolved by content matching — click Sync to pin, or call list_tables only if table_index is uncertain. " +
+    gridNote +
+    " Do not use replace_text."
+  );
+}
+
 async function executeGetSelection(): Promise<ToolExecutionResult> {
   const pinnedPresent = await isUserSelectionBookmarkPresent();
   const pinnedText = pinnedPresent ? await readUserSelectionBookmarkText() : null;
@@ -505,16 +554,13 @@ async function executeGetSelection(): Promise<ToolExecutionResult> {
             table_rows: tableSelection.rows,
             table_columns: tableSelection.columns,
             is_uniform: tableSelection.isUniform,
+            table_values: tableSelection.tableValues,
+            selection_covers_full_table: selectionCoversFullTable(tableSelection),
             row_values: tableSelection.rowValues,
             table_index_resolution: tableSelection.tableIndexResolution,
             row_index_adjusted: tableSelection.rowIndexAdjusted === true,
             selection_source: tableSelection.selectionSource,
-            hint:
-              tableSelection.selectionSource === "pinned"
-                ? "Pinned selection from Sync bookmark — update_table targets this table. Multi-row pin: row_index..row_index_end. Use start_row = row_index for partial row patches or pass a full cells grid. Do not use replace_text."
-                : tableSelection.tableIndexResolution === "reference"
-                  ? "Selection is inside a table. Click Sync to pin the cell before editing. Call list_tables for the full grid, then update_table with start_row = row_index. Do not use replace_text."
-                  : "Selection is inside a table, but table_index was resolved by matching table content — click Sync to pin, or verify list_tables before update_table. Do not use replace_text.",
+            hint: buildGetSelectionTableHint(tableSelection),
           }
         : selectionPinned
           ? {
@@ -884,9 +930,11 @@ async function executeListTables(argsJson: string): Promise<ToolExecutionResult>
         preview: table.preview,
         values: table.values,
       })),
+      hint:
+        "Reuse these values for update_table. Do not call list_tables again in this conversation unless the table changed outside the add-in or you need a different table_index.",
       ...(hasMergedHeaders
         ? {
-            hint:
+            merged_header_note:
               "Merged-header tables use the full physical column count (e.g. Jumlah/rightmost column). Pass all columns in update_table cells arrays.",
           }
         : {}),

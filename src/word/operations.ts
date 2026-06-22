@@ -546,6 +546,7 @@ async function readTableContextFromRange(
     selectionText,
     cellText: rowSpan.cellText,
     rowValues,
+    tableValues: values,
     selectedRowValues,
     tableIndexResolution: tableResolution.method,
     rowIndexAdjusted: rowSpan.adjusted,

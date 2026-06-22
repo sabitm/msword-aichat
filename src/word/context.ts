@@ -102,7 +102,7 @@ function formatTableSelectionPromptHint(tableSelection: TableSelectionContext): 
     "x" +
     tableSelection.columns +
     (tableSelection.isUniform ? "" : ", merged headers") +
-    ". Use get_selection for row_values or update_table with start_row=row_index." +
+    ". get_selection returns table_values (full grid) — use for update_table; skip list_tables if you already have it." +
     pinnedNote
   );
 }
