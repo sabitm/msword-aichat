@@ -259,12 +259,15 @@ export async function stageFindReplacements(
       }
 
       if (matchIndex !== undefined && matchIndex >= totalMatches) {
+        var lastIndex = Math.max(0, totalMatches - 1);
         throw new WordOperationError(
           "match_index " +
             matchIndex +
             " is out of range. Document has " +
             totalMatches +
-            " match(es).",
+            " match(es); valid indices are 0" +
+            (totalMatches > 1 ? " through " + lastIndex : "") +
+            " (0-based — first match is 0, not 1).",
         );
       }
 

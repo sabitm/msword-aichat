@@ -151,6 +151,7 @@ export interface SearchMatch {
   text: string;
   start: number;
   end: number;
+  inTable: boolean;
 }
 
 export interface FormatOptions {
@@ -919,6 +920,7 @@ export async function searchDocument(
       body.load("text");
       for (let index = 0; index < limit; index += 1) {
         results.items[index].load("text");
+        results.items[index].parentTableOrNullObject.load("isNullObject");
       }
       await context.sync();
 
@@ -926,7 +928,8 @@ export async function searchDocument(
       let scanAt = 0;
 
       for (let index = 0; index < limit; index += 1) {
-        const text = results.items[index].text ?? "";
+        const range = results.items[index];
+        const text = range.text ?? "";
         let start = -1;
         if (text) {
           start = fullText.indexOf(text, scanAt);
@@ -934,7 +937,13 @@ export async function searchDocument(
           if (start >= 0) scanAt = start + Math.max(text.length, 1);
         }
         const end = start >= 0 ? start + text.length : -1;
-        matches.push({ index, text, start, end });
+        matches.push({
+          index,
+          text,
+          start,
+          end,
+          inTable: !range.parentTableOrNullObject.isNullObject,
+        });
       }
 
       return matches;

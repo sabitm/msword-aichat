@@ -200,7 +200,8 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: "search_document",
-    description: "Search the document body for matching text and return up to 20 matches.",
+    description:
+      "Search the document body for matching text and return up to 20 matches with 0-based index and in_table flag. Matches inside tables need update_table, not replace_at_match.",
     parameters: {
       type: "object",
       properties: {
@@ -244,7 +245,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "find_and_replace",
     description:
-      "Find all occurrences of text in the document body and replace them. Skips table cells by default. Use for bulk changes such as dates or repeated phrases.",
+      "Find all occurrences of text in the document body and replace them. Skips table cells by default — not for filling table forms; use update_table instead.",
     parameters: {
       type: "object",
       properties: {
@@ -267,7 +268,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "replace_at_match",
     description:
-      "Replace one specific search match by 0-based match_index. Skips table cells by default. Use search_document first to inspect matches.",
+      "Replace one specific body-text match by 0-based match_index (first match is 0). Skips table cells by default — for table cells use update_table. Use search_document first.",
     parameters: {
       type: "object",
       properties: {
@@ -275,7 +276,8 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         replace: { type: "string", description: "Replacement text." },
         match_index: {
           type: "number",
-          description: "0-based index of the match to replace (same order as search_document).",
+          description:
+            "0-based index of the match to replace (first match is 0; same order as search_document).",
         },
         match_case: { type: "boolean", description: "Case-sensitive search. Defaults to false." },
         skip_tables: {
@@ -611,13 +613,26 @@ async function executeSearchDocument(argsJson: string): Promise<ToolExecutionRes
 
   const maxResults = Math.min(20, Math.max(1, Math.floor(args.max_results ?? 20)));
   const matches = await searchDocument(query, maxResults);
+  var matchesInTables = 0;
+  for (var i = 0; i < matches.length; i += 1) {
+    if (matches[i].inTable) {
+      matchesInTables += 1;
+    }
+  }
+  var output: Record<string, unknown> = {
+    query,
+    matchCount: matches.length,
+    matches,
+    indexing: "0-based — first match is match_index 0",
+  };
+  if (matchesInTables > 0) {
+    output.hint =
+      matchesInTables +
+      " match(es) are inside tables. Use get_selection or list_tables, then update_table — not replace_at_match.";
+  }
   return {
     success: true,
-    output: {
-      query,
-      matchCount: matches.length,
-      matches,
-    },
+    output,
   };
 }
 
