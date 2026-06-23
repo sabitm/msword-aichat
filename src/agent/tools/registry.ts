@@ -520,7 +520,10 @@ function buildGetSelectionTableHint(tableSelection: {
 async function executeGetSelection(): Promise<ToolExecutionResult> {
   const pinnedPresent = await isUserSelectionBookmarkPresent();
   const pinnedText = pinnedPresent ? await readUserSelectionBookmarkText() : null;
-  const tableSelection = await readTableSelectionContext(pinnedPresent ? "pinned_or_live" : "live");
+  const tableSelection = await readTableSelectionContext({
+    source: pinnedPresent ? "pinned_or_live" : "live",
+    includeTableValues: true,
+  });
   const liveText = await readSelectionPlain();
   const text = pinnedText !== null ? pinnedText : liveText;
   const inTable = tableSelection !== null;
@@ -554,7 +557,7 @@ async function executeGetSelection(): Promise<ToolExecutionResult> {
             table_rows: tableSelection.rows,
             table_columns: tableSelection.columns,
             is_uniform: tableSelection.isUniform,
-            table_values: tableSelection.tableValues,
+            table_values: tableSelection.tableValues ?? [],
             selection_covers_full_table: selectionCoversFullTable(tableSelection),
             row_values: tableSelection.rowValues,
             table_index_resolution: tableSelection.tableIndexResolution,

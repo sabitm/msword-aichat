@@ -21,8 +21,8 @@ export interface TableSelectionContext {
   selectionText: string;
   cellText: string;
   rowValues: string[];
-  /** Full table cell grid (rows x columns), same shape as list_tables values. */
-  tableValues: string[][];
+  /** Full table cell grid when requested (get_selection); omitted on lightweight UI refresh. */
+  tableValues?: string[][];
   /** Cell values for each row in a multi-row selection, when available. */
   selectedRowValues?: string[][];
   /** How table_index was resolved when parentTable is not a direct body.tables reference. */

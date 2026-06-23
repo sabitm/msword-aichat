@@ -10,6 +10,24 @@ export const USER_SELECTION_BOOKMARK = "msword_aichat_user_select";
 
 export type TableSelectionReadSource = "live" | "pinned" | "pinned_or_live";
 
+export interface TableSelectionReadOptions {
+  source?: TableSelectionReadSource;
+  /** When true, reads every cell (get_selection). UI refresh keeps false. */
+  includeTableValues?: boolean;
+}
+
+function normalizeTableSelectionReadOptions(
+  sourceOrOptions: TableSelectionReadSource | TableSelectionReadOptions = "pinned_or_live",
+): Required<TableSelectionReadOptions> {
+  if (typeof sourceOrOptions === "string") {
+    return { source: sourceOrOptions, includeTableValues: false };
+  }
+  return {
+    source: sourceOrOptions.source ?? "pinned_or_live",
+    includeTableValues: sourceOrOptions.includeTableValues === true,
+  };
+}
+
 export class WordOperationError extends Error {
   constructor(message: string) {
     super(message);
@@ -473,6 +491,87 @@ async function resolveTableRowSpanFromRange(
   };
 }
 
+function clampTableRowIndex(rowIndex: number, rowCount: number): number {
+  if (rowCount < 1) return 0;
+  return Math.max(0, Math.min(rowIndex, rowCount - 1));
+}
+
+async function resolveTableRowSpanLight(
+  context: Word.RequestContext,
+  range: Word.Range,
+  rowCount: number,
+): Promise<TableRowSpanResolution> {
+  const rangeStart = range.getRange(Word.RangeLocation.start);
+  const rangeEnd = range.getRange(Word.RangeLocation.end);
+  const startCell = rangeStart.parentTableCellOrNullObject;
+  const endCell = rangeEnd.parentTableCellOrNullObject;
+  startCell.load(["isNullObject", "rowIndex", "value"]);
+  endCell.load(["isNullObject", "rowIndex", "value"]);
+  await context.sync();
+
+  if (!startCell.isNullObject && !endCell.isNullObject) {
+    let startRow = clampTableRowIndex(startCell.rowIndex, rowCount);
+    let endRow = clampTableRowIndex(endCell.rowIndex, rowCount);
+    if (startRow > endRow) {
+      const swapRow = startRow;
+      startRow = endRow;
+      endRow = swapRow;
+    }
+
+    const startCellText = startCell.value ?? "";
+    let startColumn = await loadTableCellColumnIndex(
+      context,
+      startCell,
+      [],
+      "",
+      startCellText,
+    );
+    let endColumn = await loadTableCellColumnIndex(
+      context,
+      endCell,
+      [],
+      "",
+      endCell.value ?? "",
+    );
+
+    if (startColumn !== null && endColumn !== null && startColumn > endColumn) {
+      const swapColumn = startColumn;
+      startColumn = endColumn;
+      endColumn = swapColumn;
+    }
+
+    return {
+      startRow,
+      endRow,
+      startColumn,
+      endColumn,
+      cellText: startCellText,
+      adjusted: false,
+    };
+  }
+
+  const parentCell = range.parentTableCellOrNullObject;
+  parentCell.load(["isNullObject", "rowIndex", "value"]);
+  await context.sync();
+
+  const resolvedRow = parentCell.isNullObject
+    ? 0
+    : clampTableRowIndex(parentCell.rowIndex, rowCount);
+  const cellText = parentCell.isNullObject ? "" : parentCell.value ?? "";
+  const columnIndex = !parentCell.isNullObject
+    ? await loadTableCellColumnIndex(context, parentCell, [], "", cellText)
+    : null;
+
+  return {
+    startRow: resolvedRow,
+    endRow: resolvedRow,
+    startColumn: columnIndex,
+    endColumn: columnIndex,
+    cellText,
+    adjusted: false,
+  };
+}
+
 function collectSelectedRowValues(values: string[][], startRow: number, endRow: number): string[][] {
   const rows: string[][] = [];
   for (let rowIndex = startRow; rowIndex <= endRow; rowIndex += 1) {
@@ -481,12 +580,99 @@ function collectSelectedRowValues(values: string[][], startRow: number, endRow: 
   return rows;
 }
 
+async function resolveTableDimensionsLight(
+  table: Word.Table,
+  context: Word.RequestContext,
+): Promise<{ rows: number; columns: number }> {
+  table.load(["values", "rowCount", "isUniform"]);
+  await context.sync();
+
+  const rawValues = (table.values as string[][]) ?? [];
+  const rows = table.rowCount > 0 ? table.rowCount : rawValues.length;
+  let columns = rows > 0 ? maxColumnCountFromValues(rawValues, Math.min(rows, 1)) : 0;
+
+  if (table.isUniform === false && rows > 0) {
+    const probed = await probeTableColumnCount(table, 1, context);
+    columns = Math.max(columns, probed);
+  }
+
+  return { rows, columns };
+}
+
+async function readTableRowValues(
+  table: Word.Table,
+  context: Word.RequestContext,
+  rowIndex: number,
+  columns: number,
+  isUniform: boolean,
+): Promise<string[]> {
+  if (columns < 1) return [];
+
+  if (isUniform !== false) {
+    table.load("values");
+    await context.sync();
+    const rawValues = (table.values as string[][]) ?? [];
+    const grid = normalizeTableValues(rawValues, rawValues.length, columns);
+    return grid[rowIndex] ? grid[rowIndex].slice() : new Array(columns).fill("");
+  }
+
+  const cells: Word.TableCell[] = [];
+  for (let colIndex = 0; colIndex < columns; colIndex += 1) {
+    const cell = table.getCellOrNullObject(rowIndex, colIndex);
+    cells.push(cell);
+    cell.load(["isNullObject", "value"]);
+  }
+  await context.sync();
+
+  const line: string[] = [];
+  for (let colIndex = 0; colIndex < columns; colIndex += 1) {
+    line.push(!cells[colIndex].isNullObject ? cells[colIndex].value ?? "" : "");
+  }
+  return line;
+}
+
+async function resolveParentTableIndexLight(
+  context: Word.RequestContext,
+  tables: Word.TableCollection,
+  parentTable: Word.Table,
+  rows: number,
+  columns: number,
+): Promise<ParentTableIndexResolution> {
+  for (let index = 0; index < tables.items.length; index += 1) {
+    if (tables.items[index] === parentTable) {
+      return { index, method: "reference" };
+    }
+  }
+
+  for (let index = 0; index < tables.items.length; index += 1) {
+    tables.items[index].load(["values", "rowCount"]);
+  }
+  await context.sync();
+
+  const dimensionCandidates: number[] = [];
+  for (let index = 0; index < tables.items.length; index += 1) {
+    const dimensions = getTableWriteDimensions(
+      (tables.items[index].values as string[][]) ?? [],
+      tables.items[index].rowCount,
+    );
+    if (dimensions.rows === rows && dimensions.columns === columns) {
+      dimensionCandidates.push(index);
+    }
+  }
+  if (dimensionCandidates.length === 1) {
+    return { index: dimensionCandidates[0], method: "dimensions_match" };
+  }
+
+  return { index: 0, method: "dimensions_match" };
+}
+
 async function readTableContextFromRange(
   context: Word.RequestContext,
   range: Word.Range,
   selectionText: string,
   selectionSource: TableSelectionSource,
   bookmark?: string,
+  includeTableValues = false,
 ): Promise<TableSelectionContext | null> {
   const parentTable = range.parentTableOrNullObject;
   parentTable.load("isNullObject");
@@ -501,32 +687,59 @@ async function readTableContextFromRange(
   parentTable.load(["values", "rowCount", "isUniform"]);
   await context.sync();
 
-  const dimensions = await resolveTableDimensions(parentTable, context);
-  const values = await readTableValuesGrid(
-    parentTable,
-    context,
-    dimensions.rows,
-    dimensions.columns,
-  );
+  const isUniform = parentTable.isUniform !== false;
+  const dimensions = includeTableValues
+    ? await resolveTableDimensions(parentTable, context)
+    : await resolveTableDimensionsLight(parentTable, context);
 
-  const rowSpan = await resolveTableRowSpanFromRange(context, range, values, selectionText);
+  let values: string[][] | undefined;
+  if (includeTableValues) {
+    values = await readTableValuesGrid(parentTable, context, dimensions.rows, dimensions.columns);
+  }
+
+  const rowSpan = includeTableValues
+    ? await resolveTableRowSpanFromRange(context, range, values as string[][], selectionText)
+    : await resolveTableRowSpanLight(context, range, dimensions.rows);
+
   const rowIndex = rowSpan.startRow;
   const rowIndexEnd = rowSpan.endRow;
-  const rowValues = values[rowIndex] ? values[rowIndex].slice() : [];
   const selectedRowCount = rowIndexEnd - rowIndex + 1;
-  const selectedRowValues =
-    selectedRowCount > 1 ? collectSelectedRowValues(values, rowIndex, rowIndexEnd) : undefined;
 
-  const tableResolution = await resolveParentTableIndex(
-    context,
-    tables,
-    parentTable,
-    values,
-    dimensions.rows,
-    dimensions.columns,
-    rowIndex,
-    rowValues,
-  );
+  let rowValues: string[];
+  let selectedRowValues: string[][] | undefined;
+
+  if (includeTableValues && values) {
+    rowValues = values[rowIndex] ? values[rowIndex].slice() : [];
+    selectedRowValues =
+      selectedRowCount > 1 ? collectSelectedRowValues(values, rowIndex, rowIndexEnd) : undefined;
+  } else {
+    rowValues = await readTableRowValues(
+      parentTable,
+      context,
+      rowIndex,
+      dimensions.columns,
+      isUniform,
+    );
+  }
+
+  const tableResolution = includeTableValues
+    ? await resolveParentTableIndex(
+        context,
+        tables,
+        parentTable,
+        values as string[][],
+        dimensions.rows,
+        dimensions.columns,
+        rowIndex,
+        rowValues,
+      )
+    : await resolveParentTableIndexLight(
+        context,
+        tables,
+        parentTable,
+        dimensions.rows,
+        dimensions.columns,
+      );
 
   return {
     tableIndex: tableResolution.index,
@@ -542,11 +755,11 @@ async function readTableContextFromRange(
     selectedRowCount: selectedRowCount > 1 ? selectedRowCount : undefined,
     rows: dimensions.rows,
     columns: dimensions.columns,
-    isUniform: parentTable.isUniform !== false,
+    isUniform,
     selectionText,
     cellText: rowSpan.cellText,
     rowValues,
-    tableValues: values,
+    ...(values ? { tableValues: values } : {}),
     selectedRowValues,
     tableIndexResolution: tableResolution.method,
     rowIndexAdjusted: rowSpan.adjusted,
@@ -556,8 +769,12 @@ async function readTableContextFromRange(
 }
 
 export async function readTableSelectionContext(
-  source: TableSelectionReadSource = "pinned_or_live",
+  sourceOrOptions: TableSelectionReadSource | TableSelectionReadOptions = "pinned_or_live",
 ): Promise<TableSelectionContext | null> {
+  const options = normalizeTableSelectionReadOptions(sourceOrOptions);
+  const source = options.source;
+  const includeTableValues = options.includeTableValues;
+
   assertWordAvailable();
   try {
     return await Word.run(async (context) => {
@@ -572,6 +789,7 @@ export async function readTableSelectionContext(
             pinnedRange.text ?? "",
             "pinned",
             USER_SELECTION_BOOKMARK,
+            includeTableValues,
           );
           if (pinnedContext) {
             return pinnedContext;
@@ -590,6 +808,8 @@ export async function readTableSelectionContext(
         selection,
         selection.text ?? "",
         "live",
+        undefined,
+        includeTableValues,
       );
     });
   } catch (error) {
@@ -598,7 +818,7 @@ export async function readTableSelectionContext(
 }
 
 export async function readPinnedTableSelectionContext(): Promise<TableSelectionContext | null> {
-  return readTableSelectionContext("pinned");
+  return readTableSelectionContext({ source: "pinned", includeTableValues: false });
 }
 
 export async function selectionContainsTable(): Promise<boolean> {

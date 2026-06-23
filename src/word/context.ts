@@ -109,6 +109,10 @@ function formatTableSelectionPromptHint(tableSelection: TableSelectionContext): 
 
 export interface GetDocumentContextOptions {
   preferPinned?: boolean;
+  /** Plain text from upsertUserSelectionBookmark — avoids re-reading the bookmark range. */
+  pinnedSelectionText?: string;
+  /** Full table grid for agent tools; UI refresh keeps this false (default). */
+  includeTableValues?: boolean;
 }
 
 export async function getSelectionText(
@@ -122,16 +126,22 @@ export async function getSelectionText(
     const preferPinned = options?.preferPinned === true;
     const { readTableSelectionContext, USER_SELECTION_BOOKMARK } = await import("./operations");
     const { readUserSelectionBookmarkText } = await import("./ranges");
-    const tableSelection = await readTableSelectionContext(
-      preferPinned ? "pinned_or_live" : "live",
-    );
+    const includeTableValues = options?.includeTableValues === true;
+    const tableSelection = await readTableSelectionContext({
+      source: preferPinned ? "pinned_or_live" : "live",
+      includeTableValues,
+    });
 
     let rawText = "";
     let selectionPinned = false;
     let selectionBookmark: string | undefined;
 
     if (preferPinned) {
-      const pinnedText = await readUserSelectionBookmarkText();
+      const pinnedFromCaller = options?.pinnedSelectionText;
+      const pinnedText =
+        pinnedFromCaller !== undefined
+          ? pinnedFromCaller
+          : await readUserSelectionBookmarkText();
       if (pinnedText !== null) {
         rawText = pinnedText;
         selectionPinned = true;

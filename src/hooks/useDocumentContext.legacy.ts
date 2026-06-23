@@ -49,8 +49,11 @@ export function useDocumentContext(mode: ContextMode): {
 
     setIsLoading(true);
     upsertUserSelectionBookmark()
-      .then(function () {
-        return getDocumentContext(mode, { preferPinned: true });
+      .then(function (pinned) {
+        return getDocumentContext(mode, {
+          preferPinned: true,
+          pinnedSelectionText: pinned.text,
+        });
       })
       .then(function (next) {
         setContext(next);
