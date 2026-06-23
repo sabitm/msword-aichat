@@ -10,6 +10,7 @@ import {
   TextField,
 } from "@fluentui/react";
 import * as React from "react";
+import { clearAgentDebugLog, exportAgentDebugLog } from "../../agent/debug-log";
 import { useSettingsStore } from "../../hooks/useSettingsStore.legacy";
 import { createProvider } from "../../llm/factory";
 import { fetchModelList } from "../../llm/models";
@@ -52,6 +53,10 @@ export function SettingsPanel(): React.ReactElement {
   var _e = React.useState<string[]>([]);
   var availableModels = _e[0];
   var setAvailableModels = _e[1];
+
+  var _f = React.useState<string | null>(null);
+  var debugLogMessage = _f[0];
+  var setDebugLogMessage = _f[1];
 
   var modelOptions = availableModels.map(function (model) {
     return { value: model, label: model };
@@ -214,6 +219,28 @@ export function SettingsPanel(): React.ReactElement {
         label="Remember conversation per document"
       />
 
+      <h2 className="settings-section-title">Agent debug log</h2>
+      <Checkbox
+        checked={preferences.agentDebugLogEnabled}
+        onChange={function (_event, checked) {
+          settingsStore.updatePreferences({ agentDebugLogEnabled: Boolean(checked) });
+        }}
+        label="Record agent LLM and tool call debug log"
+      />
+      <p className="settings-hint">
+        Logs each agent LLM round-trip and tool request/response as JSONL in local storage. Export
+        downloads a file; with <code>npm run proxy</code> running, entries also append to{" "}
+        <code>logs/agent-debug.jsonl</code>.
+      </p>
+      <TextField
+        label="Debug log file endpoint"
+        description="Optional POST endpoint for dev file logging"
+        value={preferences.agentDebugLogFileEndpoint}
+        onChange={function (_event, value) {
+          settingsStore.updatePreferences({ agentDebugLogFileEndpoint: value || "" });
+        }}
+      />
+
       <div className="settings-actions">
         <PrimaryButton onClick={handleSave}>Save settings</PrimaryButton>
         <DefaultButton
@@ -229,7 +256,27 @@ export function SettingsPanel(): React.ReactElement {
           {isPinging ? <Spinner size={SpinnerSize.small} /> : null}
           Test connection
         </DefaultButton>
+        <DefaultButton
+          onClick={function () {
+            var result = exportAgentDebugLog();
+            setDebugLogMessage(result.message);
+          }}
+        >
+          Export debug log
+        </DefaultButton>
+        <DefaultButton
+          onClick={function () {
+            clearAgentDebugLog();
+            setDebugLogMessage("Debug log cleared.");
+          }}
+        >
+          Clear debug log
+        </DefaultButton>
       </div>
+
+      {debugLogMessage ? (
+        <MessageBar messageBarType={MessageBarType.info}>{debugLogMessage}</MessageBar>
+      ) : null}
 
       {modelListMessage ? (
         <MessageBar

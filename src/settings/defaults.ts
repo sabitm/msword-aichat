@@ -19,6 +19,8 @@ export interface AppPreferences {
   customInstructions: string;
   persistConversations: boolean;
   reviewModeAsComments: boolean;
+  agentDebugLogEnabled: boolean;
+  agentDebugLogFileEndpoint: string;
 }
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
@@ -30,6 +32,8 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   customInstructions: "",
   persistConversations: true,
   reviewModeAsComments: false,
+  agentDebugLogEnabled: false,
+  agentDebugLogFileEndpoint: "http://localhost:8787/__debug/log",
 };
 
 export const SETTINGS_STORAGE_KEY = "msword-aichat:provider-config";

@@ -8,6 +8,15 @@ import type {
 import { MAX_AGENT_STEPS } from "../types/agent";
 import type { ProviderConfig } from "../types/llm";
 import { createProvider } from "../llm/factory";
+import {
+  agentDebugLogLlmRequest,
+  agentDebugLogLlmResponse,
+  agentDebugLogRunEnd,
+  agentDebugLogRunStart,
+  agentDebugLogToolCall,
+  agentDebugLogToolResult,
+  createAgentRunId,
+} from "./debug-log";
 import { TOOL_DEFINITIONS, executeTool } from "./tools/registry";
 
 function createId(): string {
@@ -59,13 +68,27 @@ export async function runAgent(options: {
   const steps: AgentStep[] = [];
   let pendingEdit: PendingEdit | undefined;
   let finalText = "";
+  const runId = createAgentRunId();
+  let runError: string | undefined;
+
+  agentDebugLogRunStart(runId, {
+    messageCount: loopMessages.length,
+    toolDefinitionCount: TOOL_DEFINITIONS.length,
+  });
 
   const emit = (step: AgentStep) => {
     steps.push(step);
     options.onStep?.(step);
   };
 
+  try {
   for (let stepIndex = 0; stepIndex < MAX_AGENT_STEPS; stepIndex += 1) {
+    agentDebugLogLlmRequest(runId, stepIndex, {
+      messages: loopMessages,
+      temperature: options.config.temperature,
+      maxTokens: options.config.maxTokens,
+    });
+
     const completion: CompletionResult = await provider.complete({
       messages: loopMessages,
       tools: TOOL_DEFINITIONS,
@@ -73,12 +96,15 @@ export async function runAgent(options: {
       maxTokens: options.config.maxTokens,
     });
 
+    agentDebugLogLlmResponse(runId, stepIndex, completion);
+
     if (completion.stopReason === "error") {
+      runError = completion.error ?? "Agent request failed";
       return {
         text: finalText,
         steps,
         pendingEdit,
-        error: completion.error ?? "Agent request failed",
+        error: runError,
         transcript: buildTurnTranscript(loopMessages, turnStartIndex, finalText),
       };
     }
@@ -109,6 +135,8 @@ export async function runAgent(options: {
     });
 
     for (const toolCall of completion.toolCalls) {
+      agentDebugLogToolCall(runId, stepIndex, toolCall);
+
       const callStepId = createId();
       emit({
         id: callStepId,
@@ -121,6 +149,8 @@ export async function runAgent(options: {
       const result = await executeTool(toolCall.name, toolCall.arguments, {
         autoApplyEdits: options.autoApplyEdits,
       });
+
+      agentDebugLogToolResult(runId, stepIndex, toolCall.name, result);
 
       const resultStep: AgentStep = {
         id: createId(),
@@ -165,6 +195,7 @@ export async function runAgent(options: {
       }
 
       if (!result.success) {
+        runError = result.error;
         return {
           text: finalText || result.error || "A tool failed.",
           steps,
@@ -176,11 +207,20 @@ export async function runAgent(options: {
     }
   }
 
+  runError = "Maximum agent steps reached";
   return {
     text: finalText || "Agent stopped after reaching the maximum number of steps.",
     steps,
     pendingEdit,
-    error: "Maximum agent steps reached",
+    error: runError,
     transcript: buildTurnTranscript(loopMessages, turnStartIndex, finalText),
   };
+  } finally {
+    agentDebugLogRunEnd(runId, {
+      stepCount: steps.length,
+      finalTextLength: finalText.length,
+      error: runError,
+      pendingEdit: Boolean(pendingEdit),
+    });
+  }
 }
