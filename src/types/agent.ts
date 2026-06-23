@@ -115,7 +115,7 @@ export interface AgentRunResult {
   transcript?: AgentMessage[];
 }
 
-export const MAX_AGENT_STEPS = 10;
+export const MAX_AGENT_STEPS = 50;
 
 export const DOCUMENT_STYLES = [
   "Normal",
