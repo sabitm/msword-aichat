@@ -1,4 +1,4 @@
-export type ContextMode = "selection" | "outline" | "none";
+export type ContextMode = "selection" | "outline";
 
 export type TableIndexResolution = "reference" | "values_match" | "row_match" | "dimensions_match";
 
@@ -51,7 +51,6 @@ export interface DocumentContext {
 export const CONTEXT_MODE_LABELS: Record<ContextMode, string> = {
   selection: "Selection",
   outline: "Outline",
-  none: "None",
 };
 
 export const MAX_CONTEXT_CHARS = 12_000;

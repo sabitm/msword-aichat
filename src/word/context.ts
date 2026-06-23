@@ -227,8 +227,6 @@ export async function getDocumentContext(
       return getSelectionText(options);
     case "outline":
       return getDocumentOutline();
-    case "none":
-      return emptyContext("none");
     default: {
       const exhaustive: never = mode;
       return emptyContext(exhaustive);
@@ -237,7 +235,7 @@ export async function getDocumentContext(
 }
 
 export function buildContextPrompt(context: DocumentContext): string | null {
-  if (context.mode === "none" || context.empty) {
+  if (context.empty) {
     return null;
   }
 

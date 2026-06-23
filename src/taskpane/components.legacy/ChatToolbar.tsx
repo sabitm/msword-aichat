@@ -24,7 +24,6 @@ var modeOptions = [
 var contextOptions = [
   { value: "selection", label: CONTEXT_MODE_LABELS.selection },
   { value: "outline", label: CONTEXT_MODE_LABELS.outline },
-  { value: "none", label: CONTEXT_MODE_LABELS.none },
 ];
 
 interface ChatToolbarProps {
@@ -39,9 +38,6 @@ interface ChatToolbarProps {
 }
 
 function formatContextStatus(mode: ContextMode, context: DocumentContext, isLoading: boolean): string {
-  if (mode === "none") {
-    return "No document context";
-  }
   if (isLoading) {
     return "Loading context…";
   }
@@ -129,7 +125,7 @@ export function ChatToolbar(props: ChatToolbarProps): React.ReactElement {
           iconProps={{ iconName: "Sync" }}
           title="Pin selection and refresh context"
           ariaLabel="Pin selection and refresh context"
-          disabled={props.disabled || props.contextMode === "none" || props.isLoading}
+          disabled={props.disabled || props.isLoading}
           onClick={props.onRefresh}
         >
           {props.isLoading ? <Spinner size={SpinnerSize.small} /> : null}

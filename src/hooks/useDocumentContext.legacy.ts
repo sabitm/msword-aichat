@@ -4,7 +4,7 @@ import { getDocumentContext } from "../word/context";
 import { upsertUserSelectionBookmark } from "../word/ranges";
 
 var EMPTY_PREVIEW: DocumentContext = {
-  mode: "none",
+  mode: "selection",
   text: "",
   tokenEstimate: 0,
   truncated: false,
@@ -26,11 +26,6 @@ export function useDocumentContext(mode: ContextMode): {
   var setIsLoading = _b[1];
 
   var refresh = React.useCallback(function () {
-    if (mode === "none") {
-      setContext(Object.assign({}, EMPTY_PREVIEW, { mode: "none" }));
-      return;
-    }
-
     setIsLoading(true);
     getDocumentContext(mode)
       .then(function (next) {
@@ -42,11 +37,6 @@ export function useDocumentContext(mode: ContextMode): {
   }, [mode]);
 
   var pinAndRefresh = React.useCallback(function () {
-    if (mode === "none") {
-      setContext(Object.assign({}, EMPTY_PREVIEW, { mode: "none" }));
-      return;
-    }
-
     setIsLoading(true);
     upsertUserSelectionBookmark()
       .then(function (pinned) {
